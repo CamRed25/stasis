@@ -87,4 +87,3 @@ fn silence_stderr() {
         }
     }
 }
-
