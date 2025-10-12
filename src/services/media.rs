@@ -3,11 +3,11 @@ use eyre::Result;
 use mpris::{PlayerFinder, PlaybackStatus};
 use tokio::{task, time};
 
-use crate::core::legacy::timer::LegacyIdleTimer;
+use crate::core::timer::IdleTimer;
 use crate::log::log_error_message;
 
 /// Setup MPRIS monitoring using a Tokio task
-pub fn spawn_media_monitor(idle_timer: Arc<tokio::sync::Mutex<LegacyIdleTimer>>) -> Result<()> {
+pub fn spawn_media_monitor(idle_timer: Arc<tokio::sync::Mutex<IdleTimer>>) -> Result<()> {
     let idle_timer_clone = Arc::clone(&idle_timer);
     let interval = Duration::from_secs(2);
 

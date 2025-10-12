@@ -152,7 +152,7 @@ async fn main() -> Result<()> {
     idle_timer.lock().await.init().await;
 
     // --- Spawn background tasks ---
-    core::legacy::timer::spawn_idle_task(Arc::clone(&idle_timer)).await;
+    core::timer::spawn_idle_task(Arc::clone(&idle_timer)).await;
     services::input::spawn_input_task(Arc::clone(&idle_timer));
 
     // --- Spawn suspend event listener ---
@@ -242,7 +242,7 @@ fn get_config_path() -> Result<PathBuf> {
 
 /// Async shutdown handler (Ctrl+C / SIGTERM)
 async fn setup_shutdown_handler(
-    idle_timer: Arc<Mutex<core::legacy::timer::LegacyIdleTimer>>,
+    idle_timer: Arc<Mutex<core::timer::IdleTimer>>,
     wl_data: Arc<Mutex<WaylandIdleData>>,
     app_inhibitor: Arc<Mutex<services::app_inhibit::AppInhibitor>>,
 ) {

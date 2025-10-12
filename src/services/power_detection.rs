@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::Mutex;
-use crate::core::legacy::LegacyIdleTimer;
+use crate::core::timer::IdleTimer;
 use crate::log::log_message;
 
 /// Detect initial power state on laptop (called once at startup)
@@ -59,7 +59,7 @@ pub fn is_on_ac_power(is_laptop: bool) -> bool {
     false
 }
 
-pub async fn spawn_power_monitor(idle_timer: Arc<Mutex<LegacyIdleTimer>>) {
+pub async fn spawn_power_monitor(idle_timer: Arc<Mutex<IdleTimer>>) {
     let is_laptop = crate::utils::is_laptop();
     let mut last_on_ac = detect_initial_power_state(is_laptop);
 

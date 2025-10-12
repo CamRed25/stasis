@@ -11,7 +11,7 @@ use input::{Libinput, LibinputInterface};
 use input::event::Event;
 use tokio::sync::Mutex;
 
-use crate::core::legacy::timer::LegacyIdleTimer;
+use crate::core::timer::IdleTimer;
 
 /// Minimal libinput interface
 struct MyInterface;
@@ -38,7 +38,7 @@ impl LibinputInterface for MyInterface {
 
 /// Spawn a blocking task that watches libinput events
 /// and resets the IdleTimer when input occurs.
-pub fn spawn_input_task(idle_timer: Arc<Mutex<LegacyIdleTimer>>) {
+pub fn spawn_input_task(idle_timer: Arc<Mutex<IdleTimer>>) {
     let idle_timer_clone = Arc::clone(&idle_timer);
 
     tokio::task::spawn_blocking(move || {

@@ -3,12 +3,12 @@ use futures::StreamExt;
 use tokio::sync::Mutex;
 use zbus::{Connection, fdo::Result as ZbusResult, Proxy};
 
-use crate::core::legacy::timer::LegacyIdleTimer;
+use crate::core::timer::IdleTimer;
 use crate::core::actions::run_command_silent;
 use crate::log::log_message;
 
 /// Listens for system suspend and resume events via logind D-Bus signals.
-pub async fn listen_for_suspend_events(idle_timer: Arc<Mutex<LegacyIdleTimer>>) -> ZbusResult<()> {
+pub async fn listen_for_suspend_events(idle_timer: Arc<Mutex<IdleTimer>>) -> ZbusResult<()> {
     // Connect to the system bus
     let connection = Connection::system().await?;
 

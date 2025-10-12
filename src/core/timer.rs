@@ -13,7 +13,7 @@ use super::brightness::{capture_brightness, restore_brightness, BrightnessState}
 use super::pre_suspend::run_pre_suspend_sync;
 use super::tasks::{cleanup_tasks, spawn_task_limited};
 
-pub struct LegacyIdleTimer {
+pub struct IdleTimer {
     pub(crate) cfg: IdleConfig,
     pub(crate) last_activity: Instant,
     pub(crate) debounce_until: Option<Instant>,
@@ -36,7 +36,7 @@ pub struct LegacyIdleTimer {
     compositor_managed: bool,
 }
 
-impl LegacyIdleTimer {
+impl IdleTimer {
     pub fn new(cfg: &IdleConfig) -> Self {
         let on_ac = true;
 
@@ -370,7 +370,7 @@ impl LegacyIdleTimer {
 }
 
 /// Spawn main idle monitor task
-pub async fn spawn_idle_task(idle_timer: Arc<Mutex<LegacyIdleTimer>>) -> JoinHandle<()> {
+pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(1));
 

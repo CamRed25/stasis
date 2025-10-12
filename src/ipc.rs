@@ -5,14 +5,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::{
     services::app_inhibit::AppInhibitor,
     config,
-    core::legacy::timer::LegacyIdleTimer,
+    core::timer::IdleTimer,
     log::{log_error_message, log_message},
     SOCKET_PATH,
 };
 
 /// Spawn the control socket task using a pre-bound listener
 pub async fn spawn_control_socket_with_listener(
-    idle_timer: Arc<tokio::sync::Mutex<LegacyIdleTimer>>,
+    idle_timer: Arc<tokio::sync::Mutex<IdleTimer>>,
     app_inhibitor: Arc<tokio::sync::Mutex<AppInhibitor>>,
     cfg_path: String,
     listener: UnixListener,

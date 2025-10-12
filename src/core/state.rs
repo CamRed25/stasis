@@ -4,9 +4,9 @@ use tokio::time::sleep;
 use super::tasks::{cleanup_tasks, spawn_task_limited};
 use crate::core::brightness::restore_brightness;
 use crate::log::log_message;
-use super::LegacyIdleTimer;
+use super::IdleTimer;
 
-impl LegacyIdleTimer {
+impl IdleTimer {
     /// Resets idle timer activity and sets a short debounce window.
     pub fn reset(&mut self) {
         self.last_activity = Instant::now();
