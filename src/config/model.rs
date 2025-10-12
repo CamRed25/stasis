@@ -28,6 +28,8 @@ pub struct IdleAction {
     pub timeout_seconds: u64,
     pub command: String,
     pub kind: IdleActionKind,
+    pub lock_command: Option<String>,
+    pub resume_command: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,15 +50,10 @@ impl fmt::Display for AppPattern {
 #[derive(Debug, Clone)]
 pub struct IdleConfig {
     pub actions: HashMap<String, IdleAction>,
-    pub resume_command: Option<String>,
     pub pre_suspend_command: Option<String>,
     pub monitor_media: bool,
     pub respect_idle_inhibitors: bool,
     pub inhibit_apps: Vec<AppPattern>,
     pub debounce_seconds: u8,
-    // pub default_sequence: HashMap<String>,
-    // pub ac_squence: HashMap<String>,
-    // pub battery_sequence: HashMap<String>,
-    // pub lock_command: String,
 }
 

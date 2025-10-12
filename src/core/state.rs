@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 use tokio::time::sleep;
-
 use super::tasks::{cleanup_tasks, spawn_task_limited};
 use crate::core::brightness::restore_brightness;
 use crate::log::log_message;
@@ -11,7 +10,6 @@ impl IdleTimer {
     pub fn reset(&mut self) {
         self.last_activity = Instant::now();
         self.apply_reset();
-
         let debounce_delay = Duration::from_secs(self.cfg.debounce_seconds as u64);
         self.debounce_until = Some(Instant::now() + debounce_delay);
     }
@@ -22,8 +20,8 @@ impl IdleTimer {
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
-
-        // cancel any pending post-idle debounce when user becomes active again
+        
+        // Cancel any pending post-idle debounce when user becomes active again
         self.idle_debounce_until = None;
 
         if was_idle {
@@ -31,19 +29,24 @@ impl IdleTimer {
                 restore_brightness(state);
             }
 
-            if self.suspend_occurred {
-                if let Some(cmd) = &self.resume_command {
-                    let cmd_clone = cmd.clone();
-                    spawn_task_limited(&mut self.spawned_tasks, async move {
-                        let _ = super::actions::run_command_silent(&cmd_clone).await;
-                    });
+            // Execute resume commands for all triggered actions that have one
+            for triggered_action in &self.triggered_actions {
+                if let Some(action) = triggered_action {
+                    if let Some(resume_cmd) = &action.resume_command {
+                        let cmd_clone = resume_cmd.clone();
+                        spawn_task_limited(&mut self.spawned_tasks, async move {
+                            let _ = super::actions::run_command_silent(&cmd_clone).await;
+                        });
+                    }
                 }
-                self.suspend_occurred = false;
             }
+            
+            self.suspend_occurred = false;
         }
 
         self.active_kinds.clear();
         self.previous_brightness = None;
+        self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 
     /// Returns whether manual inhibition is currently active.
@@ -100,17 +103,22 @@ impl IdleTimer {
                 restore_brightness(state);
             }
 
-            if let Some(cmd) = &self.resume_command {
-                let cmd_clone = cmd.clone();
-                spawn_task_limited(&mut self.spawned_tasks, async move {
-                    sleep(Duration::from_millis(200)).await;
-                    let _ = super::actions::run_command_silent(&cmd_clone).await;
-                });
+            // Execute resume commands for all triggered actions that have one
+            for triggered_action in &self.triggered_actions {
+                if let Some(action) = triggered_action {
+                    if let Some(resume_cmd) = &action.resume_command {
+                        let cmd_clone = resume_cmd.clone();
+                        spawn_task_limited(&mut self.spawned_tasks, async move {
+                            sleep(Duration::from_millis(200)).await;
+                            let _ = super::actions::run_command_silent(&cmd_clone).await;
+                        });
+                    }
+                }
             }
         }
 
         self.active_kinds.clear();
         self.previous_brightness = None;
+        self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 }
-

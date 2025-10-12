@@ -1,4 +1,3 @@
-
 use eyre::Result;
 use regex::Regex;
 use rune_cfg::{RuneConfig, Value};
@@ -20,20 +19,21 @@ fn parse_app_pattern(s: &str) -> Result<AppPattern> {
 
 // Helper to try both - and _ variants of a key
 fn try_get_string(config: &RuneConfig, base_path: &str) -> Option<String> {
-    // Try hyphenated version first
-    let hyphenated = base_path.replace('_', "-");
-    if let Ok(val) = config.get::<String>(&hyphenated) {
-        return Some(val);
+    let mut parts: Vec<&str> = base_path.split('.').collect();
+    if let Some(last) = parts.pop() {
+        // try both variants of the final key
+        for variant in [last.replace('_', "-"), last.replace('-', "_")] {
+            let mut full = parts.clone();
+            full.push(&variant);
+            let path = full.join(".");
+            if let Ok(val) = config.get::<String>(&path) {
+                return Some(val);
+            }
+        }
     }
-    
-    // Try underscored version
-    let underscored = base_path.replace('-', "_");
-    if let Ok(val) = config.get::<String>(&underscored) {
-        return Some(val);
-    }
-    
     None
 }
+
 
 fn try_get_bool(config: &RuneConfig, base_path: &str, default: bool) -> bool {
     // Try hyphenated version first
@@ -138,6 +138,14 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
             "brightness" => IdleActionKind::Brightness,
             _ => IdleActionKind::Custom,
         };
+ 
+        let lock_command = if matches!(kind, IdleActionKind::LockScreen) {
+            try_get_string(config, &format!("{}.{}.lock_command", path, key))
+        } else {
+            None
+        };
+
+        let resume_command = try_get_string(config, &format!("{}.{}.resume_command", path, key));
 
         actions.insert(
             format!("{}.{}", prefix, normalize_key(&key)),
@@ -145,6 +153,8 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
                 timeout_seconds,
                 command,
                 kind,
+                lock_command,
+                resume_command,
             },
         );
     }
@@ -156,7 +166,6 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
 pub fn load_config(path: &str) -> Result<IdleConfig> {
     let config = RuneConfig::from_file(path)?;
 
-    let resume_command = try_get_string(&config, "idle.resume_command");
     let pre_suspend_command = try_get_string(&config, "idle.pre_suspend_command");
     let monitor_media = try_get_bool(&config, "idle.monitor_media", true);
     let respect_idle_inhibitors = try_get_bool(&config, "idle.respect_idle_inhibitors", true);
@@ -187,7 +196,6 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
     };
 
     log_message("Parsed Config:");
-    log_message(&format!("  resume_command = {:?}", resume_command));
     log_message(&format!("  pre_suspend_command = {:?}", pre_suspend_command));
     log_message(&format!("  monitor_media = {:?}", monitor_media));
     log_message(&format!("  respect_idle_inhibitors = {:?}", respect_idle_inhibitors));
@@ -198,15 +206,23 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
     ));
     log_message("  actions:");
     for (key, action) in &actions {
-        log_message(&format!(
+        let mut details = format!(
             "    {}: timeout={}s, kind={:?}, command=\"{}\"",
             key, action.timeout_seconds, action.kind, action.command
-        ));
+        );
+
+        if let Some(lock_cmd) = &action.lock_command {
+            details.push_str(&format!(", lock_command=\"{}\"", lock_cmd));
+        }
+        if let Some(resume_cmd) = &action.resume_command {
+            details.push_str(&format!(", resume_command=\"{}\"", resume_cmd));
+        }
+
+        log_message(&details);
     }
 
     Ok(IdleConfig {
         actions,
-        resume_command,
         pre_suspend_command,
         monitor_media,
         respect_idle_inhibitors,

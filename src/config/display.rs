@@ -13,10 +13,6 @@ impl IdleConfig {
         // General settings
         out.push_str("General:\n");
         out.push_str(&format!(
-            "  ResumeCommand      = {}\n",
-            self.resume_command.as_deref().unwrap_or("-")
-        ));
-        out.push_str(&format!(
             "  PreSuspendCommand  = {}\n",
             self.pre_suspend_command.as_deref().unwrap_or("-")
         ));
@@ -79,12 +75,21 @@ impl IdleConfig {
 
             for (key, action) in sorted {
                 out.push_str(&format!(
-                    "    {:<20} Timeout={} Kind={} Command=\"{}\"\n",
+                    "    {:<20} Timeout={} Kind={} Command=\"{}\"",
                     key,
                     action.timeout_seconds,
                     action.kind,
                     action.command
                 ));
+
+                if let Some(lock_cmd) = &action.lock_command {
+                    out.push_str(&format!(" LockCommand=\"{}\"", lock_cmd));
+                }
+                if let Some(resume_cmd) = &action.resume_command {
+                    out.push_str(&format!(" ResumeCommand=\"{}\"", resume_cmd));
+                }
+
+                out.push('\n');
             }
         }
 

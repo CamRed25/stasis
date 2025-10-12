@@ -43,11 +43,11 @@ enum Commands {
     #[command(about = "Resume idle timers after a pause")]
     Resume,
 
-    #[command(about = "Manually trigger idle actions")]
-    TriggerIdle,
-
-    #[command(about = "Trigger pre-suspend action manually")]
-    TriggerPreSuspend,
+    #[command(about = "Manually trigger a specific idle action by name")]
+    Trigger {
+        #[arg(help = "Action name to trigger (e.g., 'lock_screen', 'dpms', 'suspend', 'pre_suspend')")]
+        step: String,
+    },
 
     #[command(about = "Toggle manual idle inhibition (for Waybar etc.)")]
     ToggleInhibit,
@@ -89,12 +89,34 @@ async fn main() -> Result<()> {
                     let _ = stream.read_to_end(&mut response).await;
                     println!("{}", String::from_utf8_lossy(&response));
                 } else {
-                    // Waybar-friendly "Stasis not running"
                     if *json {
-                        println!(r#"{{"text":"😴","tooltip":"Stasis is not running"}}"#);
+                        println!(r#"{{"text":"😴","tooltip":"No running Stasis instance found"}}"#);
                     } else {
-                        println!("Stasis is not running");
+                        eprintln!("No running Stasis instance found");
+                        std::process::exit(1);
                     }
+                }
+            }
+            Commands::Trigger { step } => {
+                if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH).await {
+                    let msg = format!("trigger {}", step);
+                    let _ = stream.write_all(msg.as_bytes()).await;
+
+                    let mut response = Vec::new();
+                    let _ = stream.read_to_end(&mut response).await;
+                    let response_text = String::from_utf8_lossy(&response);
+                    
+                    if response_text.starts_with("ERROR:") {
+                        eprintln!("{}", response_text.trim_start_matches("ERROR:").trim());
+                        std::process::exit(1);
+                    } else if !response_text.is_empty() {
+                        println!("{}", response_text);
+                    } else {
+                        println!("Action '{}' triggered", step);
+                    }
+                } else {
+                    eprintln!("No running Stasis instance found");
+                    std::process::exit(1);
                 }
             }
             _ => {
@@ -102,8 +124,6 @@ async fn main() -> Result<()> {
                     Commands::Reload => "reload",
                     Commands::Pause => "pause",
                     Commands::Resume => "resume",
-                    Commands::TriggerIdle => "trigger_idle",
-                    Commands::TriggerPreSuspend => "trigger_presuspend",
                     Commands::ToggleInhibit => "toggle_inhibit",
                     Commands::Stop => "stop",
                     _ => unreachable!(),
@@ -112,13 +132,27 @@ async fn main() -> Result<()> {
                 if let Ok(mut stream) = UnixStream::connect(SOCKET_PATH).await {
                     let _ = stream.write_all(msg.as_bytes()).await;
 
-                    if msg == "info" || msg == "toggle_inhibit" {
+                    // Only read response for commands that send one back
+                    if msg == "toggle_inhibit" {
                         let mut response = Vec::new();
                         let _ = stream.read_to_end(&mut response).await;
                         println!("{}", String::from_utf8_lossy(&response));
+                    } else {
+                        // Success message for other commands
+                        let success_msg = match cmd {
+                            Commands::Reload => "Configuration reloaded successfully",
+                            Commands::Pause => "Idle timers paused",
+                            Commands::Resume => "Idle timers resumed",
+                            Commands::Stop => "Stasis daemon stopped",
+                            _ => "",
+                        };
+                        if !success_msg.is_empty() {
+                            println!("{}", success_msg);
+                        }
                     }
                 } else {
-                    log_error_message("No running instance found");
+                    eprintln!("No running Stasis instance found");
+                    std::process::exit(1);
                 }
             }
         }
@@ -130,7 +164,7 @@ async fn main() -> Result<()> {
     let just_help_or_version = std::env::args().any(|a| matches!(a.as_str(), "-V" | "--version" | "-h" | "--help" | "help"));
     if let Ok(_) = tokio::net::UnixStream::connect(SOCKET_PATH).await {
         if !just_help_or_version {
-            println!("Another instance of Stasis is already running.");
+            eprintln!("Another instance of Stasis is already running");
         }
         log_error_message("Another instance is already running.");
         return Ok(());
@@ -282,4 +316,3 @@ async fn setup_shutdown_handler(
         }
     });
 }
-

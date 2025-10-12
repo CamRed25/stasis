@@ -28,14 +28,17 @@ pub async fn prepare_action(action: &IdleAction) -> Vec<ActionRequest> {
         }
 
         IdleActionKind::LockScreen => {
-            if is_process_running(&cmd).await {
+            // Use lock_command if set, otherwise fallback to command
+            let probe_cmd = action.lock_command.as_deref().unwrap_or(&action.command);
+
+            if is_process_running(probe_cmd).await {
                 log_message("Lockscreen already running, skipping action.");
-                vec![ActionRequest::Skip(cmd)]
+                vec![ActionRequest::Skip(probe_cmd.to_string())]
             } else {
-                vec![ActionRequest::RunCommand(cmd)]
+                vec![ActionRequest::RunCommand(action.command.clone())]
             }
         }
-
+            
         _ => {
             // Default: run the configured command if any.
             if cmd.trim().is_empty() {

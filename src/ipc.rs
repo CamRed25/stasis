@@ -20,7 +20,7 @@ pub async fn spawn_control_socket_with_listener(
     tokio::spawn(async move {
         loop {
             if let Ok((mut stream, _addr)) = listener.accept().await {
-                let mut buf = vec![0u8; 64];
+                let mut buf = vec![0u8; 256];
                 if let Ok(n) = stream.read(&mut buf).await {
                     let cmd = String::from_utf8_lossy(&buf[..n]).trim().to_string();
 
@@ -46,16 +46,27 @@ pub async fn spawn_control_socket_with_listener(
                             timer.resume(true);
                         }
 
-                        "trigger_idle" => {
-                            let mut timer = idle_timer.lock().await;
-                            timer.trigger_idle().await;
-                            log_message("Forced idle actions triggered");
-                        }
+                        cmd if cmd.starts_with("trigger ") => {
+                            let step = cmd.strip_prefix("trigger ").unwrap_or("").trim();
+                            
+                            if step.is_empty() {
+                                let error_msg = "ERROR: No action name provided";
+                                let _ = stream.write_all(error_msg.as_bytes()).await;
+                                log_error_message("Trigger command received without action name");
+                                continue;
+                            }
 
-                        "trigger_presuspend" => {
                             let mut timer = idle_timer.lock().await;
-                            timer.trigger_pre_suspend(false, true).await;
-                            log_message("Pre-suspend command triggered");
+                            match timer.trigger_action_by_name(step).await {
+                                Ok(action_name) => {
+                                    log_message(&format!("Manually triggered action: {}", action_name));
+                                    let _ = stream.write_all(format!("Action '{}' triggered successfully", action_name).as_bytes()).await;
+                                }
+                                Err(e) => {
+                                    log_error_message(&format!("Failed to trigger action '{}': {}", step, e));
+                                    let _ = stream.write_all(format!("ERROR: {}", e).as_bytes()).await;
+                                }
+                            }
                         }
 
                         "stop" => {
@@ -161,4 +172,3 @@ pub async fn spawn_control_socket_with_listener(
         }
     });
 }
-
