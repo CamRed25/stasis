@@ -4,6 +4,7 @@ use tokio::process::Command;
 
 use crate::config::{IdleAction, IdleActionKind};
 use crate::log::log_message;
+use std::io::Result as IoResult;
 
 #[derive(Debug, Clone)]
 pub enum ActionRequest {
@@ -72,6 +73,18 @@ pub async fn run_command_silent(cmd: &str) -> Result<()> {
     Ok(())
 }
 
+pub async fn run_command_detached(cmd: &str) -> IoResult<()> {
+    // Spawn and immediately return; child inherits env.
+    let _child = Command::new("sh")
+        .arg("-c")
+        .arg(cmd)
+        .envs(std::env::vars())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    Ok(())
+}
 
 pub async fn is_process_running(cmd: &str) -> bool {
     if cmd.trim().is_empty() {
@@ -87,4 +100,5 @@ pub async fn is_process_running(cmd: &str) -> bool {
         Err(_) => false,
     }
 }
+
 
