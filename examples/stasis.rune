@@ -23,7 +23,7 @@ idle:
   lock_screen:
     timeout = 300
     command "swaylock"
-    resume-command "Welcome Back $env.USER!"
+    resume-command "notify-send 'Welcome Back $env.USER!'"
     lock-command "hyprlock" # this helps identify what your lock screen is for stasis to skip that step.
   end
 
