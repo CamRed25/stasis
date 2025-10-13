@@ -326,19 +326,31 @@ impl IdleTimer {
             self.suspend_occurred = true;
         }
 
-        if let Some(cmd) = &self.pre_suspend_command {
-            if let Err(e) = run_pre_suspend_sync(cmd) {
-                log_message(&format!("Pre-suspend command failed: {}", e));
-            }
+        let mut has_pre_suspend = false;
 
-            if rewind_timers {
-                self.last_activity = Instant::now();
-                self.is_idle_flags.iter_mut().for_each(|f| *f = false);
-                self.active_kinds.clear();
-                self.trigger_instant_actions().await;
+        if let Some(cmd) = &self.pre_suspend_command {
+            has_pre_suspend = true;
+            let cmd_clone = cmd.clone();
+
+            // spawn-and-forget: do NOT await the command at all
+            if let Err(e) = crate::actions::run_command_detached(&cmd_clone).await {
+                crate::log::log_error_message(&format!("Failed to spawn pre-suspend command: {}", e));
             }
         }
+
+        // Give compositor/locker a moment to stabilize before actual suspend
+        if has_pre_suspend {
+            tokio::time::sleep(std::time::Duration::from_millis(700)).await;
+        }
+
+        if rewind_timers {
+            self.last_activity = Instant::now();
+            self.is_idle_flags.iter_mut().for_each(|f| *f = false);
+            self.active_kinds.clear();
+            self.trigger_instant_actions().await;
+        }
     }
+
 
     pub fn pause(&mut self, manually: bool) {
         if manually {
@@ -495,29 +507,6 @@ impl IdleTimer {
         for handle in self.spawned_tasks.drain(..) {
             handle.abort();
         }
-    }
-}
-
-fn run_pre_suspend_sync(cmd: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use std::process::Command;
-    use std::time::{Duration, Instant};
-
-    let mut child = Command::new("sh").arg("-c").arg(cmd).spawn()?;
-    let timeout = Duration::from_secs(5);
-    let start = Instant::now();
-
-    loop {
-        if let Some(status) = child.try_wait()? {
-            if !status.success() {
-                return Err(format!("Command exited with status: {}", status).into());
-            }
-            return Ok(());
-        }
-        if start.elapsed() > timeout {
-            child.kill()?;
-            return Err("Pre-suspend command timed out".into());
-        }
-        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
