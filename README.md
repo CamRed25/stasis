@@ -54,20 +54,24 @@ Stasis doesn't just lock your screen after a timer—it understands context. Wat
 
 > Stasis is evolving! Here’s what’s currently in progress, planned, and potential future features. Items are grouped to show what’s happening now and what’s coming next.
 
+### Complete
+
+- [x] **Resume-command for all action blocks** – run optional follow-up commands after each action
+- [x] **CLI per-state triggers** – allow triggering a **specific state**, the **current state**, or **all states** while respecting completed actions
+
+> [!WARNING]
+> Please See [wiki](https://github.com/saltnpepper97/stasis/wiki) for breaking changes as of v0.3.5
+
 ### In Progress
 
-- [ ] **State awareness for action blocks** - ensure idle steps execute in the correct sequence and aren't repeated
-- [ ] **CLI state-aware triggers** – allow triggering a **specific state**, the **current state**, or **all states** while respecting completed actions
+- [ ] **User profiles / presets** – save and load different workflows for various scenarios (work, gaming, etc.)
 
 ### Planned
 
-- [ ] **User profiles / presets** – save and load different workflows for various scenarios (work, gaming, etc.)
 - [ ] **Custom notifications** – display alerts for idle events or action execution
-- [ ] **Post-command for all action blocks** – run optional follow-up commands after each action
 - [ ] **Logging & analytics** – historical idle data for power/performance insights
-
-### Potential Features
 - [ ] **Power-saving optimizations** – CPU/GPU-aware idle handling
+
 
 ## 📦 Installation
 

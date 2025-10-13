@@ -2,7 +2,8 @@ use std::{sync::Arc, time::Duration};
 use eyre::Result;
 use mpris::{PlayerFinder, PlaybackStatus};
 use tokio::{task, time};
-use crate::idle_timer::IdleTimer;
+
+use crate::core::timer::IdleTimer;
 use crate::log::log_error_message;
 
 /// Setup MPRIS monitoring using a Tokio task
