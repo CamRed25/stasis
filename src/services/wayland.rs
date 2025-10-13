@@ -2,7 +2,7 @@ use eyre::Result;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::idle_timer::IdleTimer;
+use crate::core::timer::IdleTimer;
 use crate::log::{log_error_message, log_message};
 
 use tokio::sync::Notify;

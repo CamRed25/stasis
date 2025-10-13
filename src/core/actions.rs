@@ -1,10 +1,12 @@
-use std::time::Duration;
+use std::{
+    time::Duration,
+    io::Result as IoResult
+};
 use eyre::Result;
 use tokio::process::Command;
 
 use crate::config::{IdleAction, IdleActionKind};
 use crate::log::log_message;
-use std::io::Result as IoResult;
 
 #[derive(Debug, Clone)]
 pub enum ActionRequest {
@@ -29,15 +31,17 @@ pub async fn prepare_action(action: &IdleAction) -> Vec<ActionRequest> {
         }
 
         IdleActionKind::LockScreen => {
-            // TODO: Might Change this in the future
-            if is_process_running(&cmd).await {
+            // Use lock_command if set, otherwise fallback to command
+            let probe_cmd = action.lock_command.as_deref().unwrap_or(&action.command);
+
+            if is_process_running(probe_cmd).await {
                 log_message("Lockscreen already running, skipping action.");
-                vec![ActionRequest::Skip(cmd)]
+                vec![ActionRequest::Skip(probe_cmd.to_string())]
             } else {
-                vec![ActionRequest::RunCommand(cmd)]
+                vec![ActionRequest::RunCommand(action.command.clone())]
             }
         }
-
+            
         _ => {
             // Default: run the configured command if any.
             if cmd.trim().is_empty() {
@@ -74,7 +78,6 @@ pub async fn run_command_silent(cmd: &str) -> Result<()> {
 }
 
 pub async fn run_command_detached(cmd: &str) -> IoResult<()> {
-    // Spawn and immediately return; child inherits env.
     let _child = Command::new("sh")
         .arg("-c")
         .arg(cmd)
@@ -83,6 +86,7 @@ pub async fn run_command_detached(cmd: &str) -> IoResult<()> {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()?;
+
     Ok(())
 }
 
@@ -100,5 +104,4 @@ pub async fn is_process_running(cmd: &str) -> bool {
         Err(_) => false,
     }
 }
-
 
