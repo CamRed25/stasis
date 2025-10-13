@@ -4,10 +4,11 @@
 app_default_timeout 300
 
 idle:
-  resume_command "systemctl resume-sessions"
-  pre_suspend_command "notify-send 'System suspending in 5 seconds' && sleep 5"
+  pre_suspend_command "hyprlock"
   monitor_media true
   respect_idle_inhibitors true
+  # Uncomment the line below to customize debounce 14:55:32
+  # debounce-seconds 4
 
   inhibit_apps [
     "vlc"
@@ -22,16 +23,20 @@ idle:
   lock_screen:
     timeout = 300
     command "swaylock"
+    resume-command "Welcome Back $env.USER!"
+    lock-command "hyprlock" # this helps identify what your lock screen is for stasis to skip that step.
   end
 
   suspend:
     timeout 1800
     command "systemctl suspend"
+    resume-command None
   end
 
   dpms:
     timeout 330
     command "niri msg action power-off-monitors"
+    resume-command "niri msg action power-on-monitors"
   end
 
   # Laptop-only AC actions
