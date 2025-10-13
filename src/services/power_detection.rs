@@ -65,7 +65,7 @@ pub async fn spawn_power_monitor(idle_timer: Arc<Mutex<IdleTimer>>) {
 
     {
         let mut timer = idle_timer.lock().await;
-        timer.on_ac = last_on_ac;
+        timer.update_power_source(last_on_ac).await;
     }
 
     let mut ticker = tokio::time::interval(Duration::from_secs(5));
