@@ -52,6 +52,7 @@ pub struct IdleConfig {
     pub actions: HashMap<String, IdleAction>,
     pub pre_suspend_command: Option<String>,
     pub monitor_media: bool,
+    pub ignore_remote_media: bool,
     pub respect_idle_inhibitors: bool,
     pub inhibit_apps: Vec<AppPattern>,
     pub debounce_seconds: u8,

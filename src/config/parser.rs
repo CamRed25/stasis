@@ -21,7 +21,6 @@ fn parse_app_pattern(s: &str) -> Result<AppPattern> {
 fn try_get_string(config: &RuneConfig, base_path: &str) -> Option<String> {
     let mut parts: Vec<&str> = base_path.split('.').collect();
     if let Some(last) = parts.pop() {
-        // try both variants of the final key
         for variant in [last.replace('_', "-"), last.replace('-', "_")] {
             let mut full = parts.clone();
             full.push(&variant);
@@ -35,47 +34,41 @@ fn try_get_string(config: &RuneConfig, base_path: &str) -> Option<String> {
 }
 
 fn try_get_bool(config: &RuneConfig, base_path: &str, default: bool) -> bool {
-    // Try hyphenated version first
     let hyphenated = base_path.replace('_', "-");
     if let Ok(val) = config.get::<bool>(&hyphenated) {
         return val;
     }
-    
-    // Try underscored version
+
     let underscored = base_path.replace('-', "_");
     if let Ok(val) = config.get::<bool>(&underscored) {
         return val;
     }
-    
+
     default
 }
 
 fn try_get_value(config: &RuneConfig, base_path: &str) -> Option<Value> {
-    // Try hyphenated version first
     let hyphenated = base_path.replace('_', "-");
     if let Ok(val) = config.get_value(&hyphenated) {
         return Some(val);
     }
-    
-    // Try underscored version
+
     let underscored = base_path.replace('-', "_");
     if let Ok(val) = config.get_value(&underscored) {
         return Some(val);
     }
-    
+
     None
 }
 
 fn try_get_keys(config: &RuneConfig, base_path: &str) -> Vec<String> {
     let mut keys = Vec::new();
 
-    // Try underscored version first
     let underscored = base_path.replace('-', "_");
     if let Ok(k) = config.get_keys(&underscored) {
         keys.extend(k);
     }
 
-    // Try hyphenated version next
     let hyphenated = base_path.replace('_', "-");
     if let Ok(k) = config.get_keys(&hyphenated) {
         for key in k {
@@ -88,7 +81,6 @@ fn try_get_keys(config: &RuneConfig, base_path: &str) -> Vec<String> {
     keys
 }
 
-// Normalize a key for consistent storage (use hyphens)
 fn normalize_key(key: &str) -> String {
     key.replace('_', "-")
 }
@@ -99,6 +91,7 @@ fn is_special_key(key: &str) -> bool {
         "resume_command" | "resume-command"
             | "pre_suspend_command" | "pre-suspend-command"
             | "monitor_media" | "monitor-media"
+            | "ignore_remote_media" | "ignore-remote-media"
             | "respect_idle_inhibitors" | "respect-idle-inhibitors"
             | "inhibit_apps" | "inhibit-apps"
     )
@@ -113,13 +106,11 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
             continue;
         }
 
-        // Command must exist
         let command = match try_get_string(config, &format!("{}.{}.command", path, key)) {
             Some(cmd) => cmd,
             None => continue,
         };
 
-        // Timeout must exist and parse, otherwise skip
         let timeout_seconds = match try_get_value(config, &format!("{}.{}.timeout", path, key)) {
             Some(Value::Number(n)) => n as u64,
             Some(Value::String(s)) => match s.parse::<u64>() {
@@ -129,7 +120,6 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
             _ => continue,
         };
 
-        // Determine kind
         let kind = match key.as_str() {
             "lock_screen" | "lock-screen" => IdleActionKind::LockScreen,
             "suspend" => IdleActionKind::Suspend,
@@ -137,7 +127,7 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> HashMap<Str
             "brightness" => IdleActionKind::Brightness,
             _ => IdleActionKind::Custom,
         };
- 
+
         let lock_command = if matches!(kind, IdleActionKind::LockScreen) {
             try_get_string(config, &format!("{}.{}.lock_command", path, key))
         } else {
@@ -167,6 +157,7 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
 
     let pre_suspend_command = try_get_string(&config, "idle.pre_suspend_command");
     let monitor_media = try_get_bool(&config, "idle.monitor_media", true);
+    let ignore_remote_media = try_get_bool(&config, "idle.ignore_remote_media", true);
     let respect_idle_inhibitors = try_get_bool(&config, "idle.respect_idle_inhibitors", true);
 
     let debounce_seconds = match try_get_value(&config, "idle.debounce_seconds") {
@@ -197,6 +188,7 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
     log_message("Parsed Config:");
     log_message(&format!("  pre_suspend_command = {:?}", pre_suspend_command));
     log_message(&format!("  monitor_media = {:?}", monitor_media));
+    log_message(&format!("  ignore_remote_media = {:?}", ignore_remote_media));
     log_message(&format!("  respect_idle_inhibitors = {:?}", respect_idle_inhibitors));
     log_message(&format!("  debounce_seconds = {:?}", debounce_seconds));
     log_message(&format!(
@@ -224,6 +216,7 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
         actions,
         pre_suspend_command,
         monitor_media,
+        ignore_remote_media,
         respect_idle_inhibitors,
         inhibit_apps,
         debounce_seconds,
