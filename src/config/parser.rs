@@ -34,7 +34,6 @@ fn try_get_string(config: &RuneConfig, base_path: &str) -> Option<String> {
     None
 }
 
-
 fn try_get_bool(config: &RuneConfig, base_path: &str, default: bool) -> bool {
     // Try hyphenated version first
     let hyphenated = base_path.replace('_', "-");

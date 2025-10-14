@@ -210,7 +210,7 @@ impl IdleTimer {
                 for req in requests {
                     match req {
                         super::actions::ActionRequest::PreSuspend => {
-                            self.trigger_pre_suspend(false, false).await;
+                            // Skip
                         }
                         super::actions::ActionRequest::RunCommand(cmd) => {
                             let cmd_clone = cmd.clone();
@@ -260,7 +260,6 @@ impl IdleTimer {
         }
 
         // Find matching action and its index first
-        // We need to search both by kind name AND by config key name (for custom actions)
         let mut found: Option<(usize, IdleAction, String)> = None;
         
         // Get the current power state prefix
@@ -276,37 +275,40 @@ impl IdleTimer {
                 break;
             }
             
-            // For custom actions, match by config key name
-            if action.kind == IdleActionKind::Custom {
-                // Search through config actions to find the key name
-                for (key, cfg_action) in &self.cfg.actions {
-                    // Check if this config action matches our current action
-                    if cfg_action.command == action.command && cfg_action.timeout_seconds == action.timeout_seconds {
-                        // Extract just the action name (remove ac./battery./desktop. prefix)
-                        let action_name = if using_power_profiles {
-                            key.strip_prefix(prefix)
-                                .or_else(|| key.strip_prefix("desktop."))
-                                .unwrap_or(key)
-                        } else {
-                            key.strip_prefix("desktop.").unwrap_or(key)
-                        };
-                        
-                        let key_normalized = action_name.replace('_', "-").to_lowercase();
-                        if key_normalized == normalized {
-                            found = Some((i, action.clone(), action_name.to_string()));
-                            break;
-                        }
+            // Search through config actions to find the key name (for ALL action types)
+            for (key, cfg_action) in &self.cfg.actions {
+                // Check if this config action matches our current action
+                if cfg_action.command == action.command && cfg_action.timeout_seconds == action.timeout_seconds {
+                    // Extract just the action name (remove ac./battery./desktop. prefix)
+                    let action_name = if using_power_profiles {
+                        key.strip_prefix(prefix)
+                            .or_else(|| key.strip_prefix("desktop."))
+                            .unwrap_or(key)
+                    } else {
+                        key.strip_prefix("desktop.").unwrap_or(key)
+                    };
+                    
+                    let key_normalized = action_name.replace('_', "-").to_lowercase();
+                    if key_normalized == normalized {
+                        found = Some((i, action.clone(), action_name.to_string()));
+                        break;
                     }
                 }
-                if found.is_some() {
-                    break;
-                }
+            }
+            if found.is_some() {
+                break;
             }
         }
 
         // Now trigger the action if found
         if let Some((i, action, action_name)) = found {
             if !self.is_idle_flags[i] {
+                // Advance the timer: rewind last_activity so we appear to have been idle for this action's timeout
+                if action.timeout_seconds > 0 {
+                    let timeout_duration = Duration::from_secs(action.timeout_seconds);
+                    self.last_activity = Instant::now() - timeout_duration;
+                }
+                
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(action.kind.to_string());
@@ -379,7 +381,6 @@ impl IdleTimer {
             name,
             available.join(", ")
         ))
-
     }
 
     pub async fn trigger_idle(&mut self) {
