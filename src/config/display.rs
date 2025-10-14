@@ -25,7 +25,7 @@ impl IdleConfig {
             if self.respect_idle_inhibitors { "true" } else { "false" }
         ));
         out.push_str(&format!(
-            "  DebounceSeconds  = {}\n",
+            "  DebounceSeconds    = {}\n",
             self.debounce_seconds
         ));
 

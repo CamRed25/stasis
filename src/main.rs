@@ -232,7 +232,7 @@ async fn main() -> Result<()> {
     let local = LocalSet::new();
     local.run_until(async {
         if cfg.monitor_media {
-            services::media::spawn_media_monitor(Arc::clone(&idle_timer))?;
+            services::media::spawn_media_monitor(Arc::clone(&idle_timer), cfg.ignore_remote_media)?;
         }
         log_message(&format!("Running. Idle actions loaded: {}", cfg.actions.len()));
         std::future::pending::<()>().await;
