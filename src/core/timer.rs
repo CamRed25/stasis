@@ -307,7 +307,14 @@ impl IdleTimer {
                 if action.timeout_seconds > 0 {
                     let timeout_duration = Duration::from_secs(action.timeout_seconds);
                     self.last_activity = Instant::now() - timeout_duration;
+                } else {
+                    // For instant actions (timeout=0), still rewind a bit to ensure debounce works
+                    self.last_activity = Instant::now() - Duration::from_secs(5);
                 }
+                
+                // IMPORTANT: Clear any existing debounce so the manual trigger works immediately
+                self.debounce_until = None;
+                self.idle_debounce_until = None;
                 
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
