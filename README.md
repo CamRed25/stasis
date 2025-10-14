@@ -36,6 +36,11 @@
 
 ---
 
+> [!WARNING]
+> Please See [wiki](https://github.com/saltnpepper97/stasis/wiki) for breaking changes as of v0.4.0
+
+---
+
 ## ✨ Features
 
 Stasis doesn't just lock your screen after a timer—it understands context. Watching a video? Reading a document? Playing music? Stasis detects these scenarios and intelligently manages idle behavior, so you never have to jiggle your mouse to prevent an unwanted screen lock.
@@ -58,9 +63,6 @@ Stasis doesn't just lock your screen after a timer—it understands context. Wat
 
 - [x] **Resume-command for all action blocks** – run optional follow-up commands after each action
 - [x] **CLI per-state triggers** – allow triggering a **specific state**, the **current state**, or **all states** while respecting completed actions
-
-> [!WARNING]
-> Please See [wiki](https://github.com/saltnpepper97/stasis/wiki) for breaking changes as of v0.3.5
 
 ### In Progress
 
