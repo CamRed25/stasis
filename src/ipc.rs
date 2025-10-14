@@ -55,16 +55,29 @@ pub async fn spawn_control_socket_with_listener(
                                 log_error_message("Trigger command received without action name");
                                 continue;
                             }
-
+                    
                             let mut timer = idle_timer.lock().await;
-                            match timer.trigger_action_by_name(step).await {
-                                Ok(action_name) => {
-                                    log_message(&format!("Manually triggered action: {}", action_name));
-                                    let _ = stream.write_all(format!("Action '{}' triggered successfully", action_name).as_bytes()).await;
-                                }
-                                Err(e) => {
-                                    log_error_message(&format!("Failed to trigger action '{}': {}", step, e));
-                                    let _ = stream.write_all(format!("ERROR: {}", e).as_bytes()).await;
+
+                            if step == "all" {
+                                timer.trigger_idle().await;
+                                log_message("Manually triggered all idle actions");
+                                let _ = stream
+                                    .write_all(b"All idle actions triggered successfully")
+                                    .await;
+                            } else {
+                                match timer.trigger_action_by_name(step).await {
+                                    Ok(action_name) => {
+                                        log_message(&format!("Manually triggered action: {}", action_name));
+                                        let _ = stream
+                                            .write_all(format!("Action '{}' triggered successfully", action_name).as_bytes())
+                                            .await;
+                                    }
+                                    Err(e) => {
+                                        log_error_message(&format!("Failed to trigger action '{}': {}", step, e));
+                                        let _ = stream
+                                            .write_all(format!("ERROR: {}", e).as_bytes())
+                                            .await;
+                                    }
                                 }
                             }
                         }
