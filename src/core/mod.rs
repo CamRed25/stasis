@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod brightness;
+pub mod commands;
 pub mod timer;
 pub mod state;
 pub mod tasks;
