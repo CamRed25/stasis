@@ -2,7 +2,6 @@ use std::{sync::Arc, time::Duration};
 use eyre::Result;
 use mpris::{PlayerFinder, PlaybackStatus};
 use tokio::{task, time};
-
 use crate::core::timer::IdleTimer;
 use crate::log::log_error_message;
 
@@ -26,34 +25,44 @@ pub fn spawn_media_monitor(
 ) -> Result<()> {
     let idle_timer_clone = Arc::clone(&idle_timer);
     let interval = Duration::from_secs(2);
-
+    
     task::spawn(async move {
         let mut ticker = time::interval(interval);
         let mut media_playing = false;
-
+        
         loop {
             ticker.tick().await;
-
+            
             let any_playing = match PlayerFinder::new() {
                 Ok(finder) => match finder.find_all() {
                     Ok(players) => players.iter().any(|player| {
                         let identity = player.identity();
                         let bus_name = player.bus_name().to_string();
-
-                        // Only apply ignore list if enabled
+                        
+                        // Check if this player is playing
+                        let is_playing = player
+                            .get_playback_status()
+                            .map(|s| s == PlaybackStatus::Playing)
+                            .unwrap_or(false);
+                        
+                        // If not playing, it doesn't matter
+                        if !is_playing {
+                            return false;
+                        }
+                        
+                        // If playing, check if we should ignore it
                         if ignore_remote_media {
+                            // Skip (ignore) this player if it's in the ignore list
                             if IGNORED_PLAYERS
                                 .iter()
                                 .any(|s| identity.contains(s) || bus_name.contains(s))
                             {
-                                return false;
+                                return false; // Don't count this player
                             }
                         }
-
-                        player
-                            .get_playback_status()
-                            .map(|s| s == PlaybackStatus::Playing)
-                            .unwrap_or(false)
+                        
+                        // Player is playing and not ignored
+                        true
                     }),
                     Err(e) => {
                         log_error_message(&format!("MPRIS: failed to list players: {:?}", e));
@@ -65,8 +74,9 @@ pub fn spawn_media_monitor(
                     false
                 }
             };
-
+            
             let mut timer = idle_timer_clone.lock().await;
+            
             if any_playing && !media_playing {
                 timer.pause(false);
                 media_playing = true;
@@ -76,6 +86,6 @@ pub fn spawn_media_monitor(
             }
         }
     });
-
+    
     Ok(())
 }
