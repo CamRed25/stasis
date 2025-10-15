@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, eyre, WrapErr};
 use regex::Regex;
 use rune_cfg::{RuneConfig, Value};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use crate::utils::is_laptop;
 fn parse_app_pattern(s: &str) -> Result<AppPattern> {
     let regex_meta = ['.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '\\', '^', '$'];
     if s.chars().any(|c| regex_meta.contains(&c)) {
-        Ok(AppPattern::Regex(Regex::new(s)?))
+        Ok(AppPattern::Regex(Regex::new(s).wrap_err("invalid regex in inhibit_apps")?))
     } else {
         Ok(AppPattern::Literal(s.to_string()))
     }
@@ -50,6 +50,7 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> Result<Hash
         let command = config
             .get::<String>(&command_path)
             .or_else(|_| config.get::<String>(&command_path.replace('-', "_")))
+            .wrap_err_with(|| eyre!("missing or invalid command for '{}'", key))
             .ok();
         if command.is_none() {
             continue;
@@ -60,6 +61,7 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> Result<Hash
         let timeout_seconds = config
             .get::<u64>(&timeout_path)
             .or_else(|_| config.get::<u64>(&timeout_path.replace('-', "_")))
+            .wrap_err_with(|| eyre!("missing or invalid timeout for '{}'", key))
             .ok();
         if timeout_seconds.is_none() {
             continue;
@@ -107,18 +109,51 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> Result<Hash
 
 // --- main loader ---
 pub fn load_config(path: &str) -> Result<IdleConfig> {
-    let config = RuneConfig::from_file(path)?;
+    let config = RuneConfig::from_file(path)
+        .wrap_err_with(|| eyre!("failed to load Rune config from '{}'", path))?;
 
     let pre_suspend_command = config
         .get::<String>("idle.pre_suspend_command")
         .or_else(|_| config.get::<String>("idle.pre-suspend-command"))
         .ok();
 
-    let monitor_media = config.get_or("idle.monitor_media", true);
-    let ignore_remote_media = config.get_or("idle.ignore_remote_media", true);
-    let respect_idle_inhibitors = config.get_or("idle.respect_idle_inhibitors", true);
+    let monitor_media = config
+        .get::<bool>("idle.monitor_media")
+        .or_else(|_| config.get::<bool>("idle.monitor-media"))
+        .or_else(|err| {
+            // only fallback if it's a "not found" error
+            if err.to_string().contains("not found") {
+                Ok(true)
+            } else {
+                Err(err)
+            }
+        })
+        .wrap_err("invalid value for 'idle.monitor_media'")?;
 
-    // now valid since TryFrom<Value> for u8 exists
+    let ignore_remote_media = config
+        .get::<bool>("idle.ignore_remote_media")
+        .or_else(|_| config.get::<bool>("idle.ignore-remote-media"))
+        .or_else(|err| {
+            if err.to_string().contains("not found") {
+                Ok(true)
+            } else {
+                Err(err)
+            }
+        })
+        .wrap_err("invalid value for 'idle.ignore_remote_media'")?;
+
+    let respect_idle_inhibitors = config
+        .get::<bool>("idle.respect_idle_inhibitors")
+        .or_else(|_| config.get::<bool>("idle.respect-idle-inhibitors"))
+        .or_else(|err| {
+            if err.to_string().contains("not found") {
+                Ok(true)
+            } else {
+                Err(err)
+            }
+        })
+        .wrap_err("invalid value for 'idle.respect_idle_inhibitors'")?;
+
     let debounce_seconds = config.get_or("idle.debounce_seconds", 3u8);
 
     let inhibit_apps: Vec<AppPattern> = config
@@ -144,16 +179,22 @@ pub fn load_config(path: &str) -> Result<IdleConfig> {
         let mut map = HashMap::new();
         map.extend(
             collect_actions(&config, "idle.on_ac", "ac")
-                .or_else(|_| collect_actions(&config, "idle.on-ac", "ac"))?,
+                .or_else(|_| collect_actions(&config, "idle.on-ac", "ac"))
+                .wrap_err("failed to parse on_ac section")?,
         );
         map.extend(
             collect_actions(&config, "idle.on_battery", "battery")
-                .or_else(|_| collect_actions(&config, "idle.on-battery", "battery"))?,
+                .or_else(|_| collect_actions(&config, "idle.on-battery", "battery"))
+                .wrap_err("failed to parse on_battery section")?,
         );
         map
     } else {
-        collect_actions(&config, "idle", "desktop")?
+        collect_actions(&config, "idle", "desktop").wrap_err("failed to parse idle section")?
     };
+
+    if actions.is_empty() {
+        return Err(eyre!("no valid idle actions found in config"));
+    }
 
     log_message("Parsed Config:");
     log_message(&format!("  pre_suspend_command = {:?}", pre_suspend_command));
