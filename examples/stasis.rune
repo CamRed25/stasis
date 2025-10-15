@@ -6,8 +6,9 @@ app_default_timeout 300
 idle:
   pre_suspend_command "hyprlock"
   monitor_media true
+  ignore_remote_media true
   respect_idle_inhibitors true
-  # Uncomment the line below to customize debounce 14:55:32
+  # Uncomment the line below to customize debounce
   # debounce-seconds 4
 
   inhibit_apps [
@@ -21,10 +22,10 @@ idle:
 
   # Desktop-only idle actions
   lock_screen:
+    lock-command "hyprlock" # this helps identify what your lock screen is for stasis to skip that step.
     timeout = 300
     command "swaylock"
     resume-command "notify-send 'Welcome Back $env.USER!'"
-    lock-command "hyprlock" # this helps identify what your lock screen is for stasis to skip that step.
   end
 
   suspend:
