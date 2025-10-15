@@ -20,6 +20,11 @@ impl IdleConfig {
             "  MonitorMedia       = {}\n",
             if self.monitor_media { "true" } else { "false" }
         ));
+
+        out.push_str(&format!(
+            "  IgnoreRemoteMedia  = {}\n",
+            self.ignore_remote_media
+        ));
         out.push_str(&format!(
             "  RespectInhibitors  = {}\n",
             if self.respect_idle_inhibitors { "true" } else { "false" }
