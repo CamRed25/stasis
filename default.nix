@@ -3,7 +3,7 @@ with import <nixpkgs> {}; let
 in
   rustPlatform.buildRustPackage rec {
     pname = "stasis";
-    version = "0.2.1";
+    version = "0.4.12";
 
     src = ./.;
 
