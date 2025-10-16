@@ -21,7 +21,7 @@ use crate::services::wayland::{WaylandIdleData, setup as setup_wayland};
 #[command(
     name = "Stasis",
     version = env!("CARGO_PKG_VERSION"), 
-    about = "Capable idle manager for Wayland\n\nFor configuration details, see `man 5 stasis`"
+    about = "A lightweight, Feature Rich Wayland idle manager written in Rust.\nFor configuration details, see `man 5 stasis`"
 )]
 struct Args {
     #[arg(short, long, value_name = "FILE")]
