@@ -1,7 +1,16 @@
 [package]
 name = "stasis"
-version = "0.4.1"
+version = "0.4.11"
 edition = "2024"
+authors = ["Dustin Pilgrim <dustin.pilgrim1997@gmail.com>"]
+description = "A lightweight, Feature Rich Wayland idle manager written in Rust."
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/saltnpepper97/stasis"
+keywords = ["wayland", "idle", "manager", "rust", "linux"]
+categories = ["command-line-utilities", "os::linux-apis"]
+exclude = ["/.github", "/target", "/.idea", "/.vscode", "Cargo.lock"]
+
 
 [dependencies]
 chrono = "0.4.42"
