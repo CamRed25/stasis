@@ -90,7 +90,16 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> Result<Hash
         let resume_command = config
             .get::<String>(&resume_path)
             .or_else(|_| config.get::<String>(&resume_path.replace('-', "_")))
+            .or_else(|_| {
+                let alt_resume_path = format!("{}.{}.resume-command", path, key);
+                config.get::<String>(&alt_resume_path)
+            })
+            .or_else(|_| {
+                let alt_resume_path = format!("{}.{}.resume-command", path, key);
+                config.get::<String>(&alt_resume_path.replace('-', "_"))
+            })
             .ok();
+
 
         actions.insert(
             format!("{}.{}", prefix, normalize_key(&key)),
