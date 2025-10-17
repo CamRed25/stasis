@@ -76,11 +76,20 @@ fn collect_actions(config: &RuneConfig, path: &str, prefix: &str) -> Result<Hash
             _ => IdleActionKind::Custom,
         };
 
+        // FIXED: Only parse lock_command for lock-screen actions
         let lock_command = if matches!(kind, IdleActionKind::LockScreen) {
             let lock_path = format!("{}.{}.lock_command", path, key);
             config
                 .get::<String>(&lock_path)
                 .or_else(|_| config.get::<String>(&lock_path.replace('-', "_")))
+                .or_else(|_| {
+                    let alt_lock_path = format!("{}.{}.lock-command", path, key);
+                    config.get::<String>(&alt_lock_path)
+                })
+                .or_else(|_| {
+                    let alt_lock_path = format!("{}.{}.lock-command", path, key);
+                    config.get::<String>(&alt_lock_path.replace('-', "_"))
+                })
                 .ok()
         } else {
             None

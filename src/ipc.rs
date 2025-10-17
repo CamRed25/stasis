@@ -43,7 +43,7 @@ pub async fn spawn_control_socket_with_listener(
 
                         "resume" => {
                             let mut timer = idle_timer.lock().await;
-                            timer.resume(true);
+                            timer.resume(true).await;
                         }
 
                         cmd if cmd.starts_with("trigger ") => {
