@@ -7,34 +7,41 @@ use super::IdleTimer;
 
 impl IdleTimer {
     /// Resets idle timer activity and sets a short debounce window.
-    pub fn reset(&mut self) {
+    pub async fn reset(&mut self) {
         self.last_activity = Instant::now();
-        self.apply_reset();
+        self.apply_reset().await;
         let debounce_delay = Duration::from_secs(self.cfg.debounce_seconds as u64);
         self.debounce_until = Some(Instant::now() + debounce_delay);
     }
 
     /// Internal helper for clearing idle flags, brightness state, and resuming.
-    pub(crate) fn apply_reset(&mut self) {
+    pub(crate) async fn apply_reset(&mut self) {
         let was_idle = self.is_idle_flags.iter().any(|&b| b);
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
-        
-        // Cancel any pending post-idle debounce when user becomes active again
         self.idle_debounce_until = None;
-      
+
         if was_idle {
+            // Only check lock and advance if we're actually waking from idle
+            let lock_running = self.is_lock_running().await;
+            if lock_running {
+                if !self.lock_process_running {
+                    log_message("Lock detected on wake — advancing past lock timeout");
+                    self.lock_process_running = true;
+                }
+                let _ = self.advance_past_lock().await;
+            } else {
+                self.lock_process_running = false;
+            }
+
             if let Some(state) = &self.previous_brightness {
                 restore_brightness(state);
             }
 
-            // Execute resume commands for all triggered actions that have one,
-            // but SKIP lock-screen here — lock resume is handled by the lock monitor.
             for triggered_action in &self.triggered_actions {
                 if let Some(action) = triggered_action {
                     if action.kind == crate::config::IdleActionKind::LockScreen {
-                        // skip lock resume here
                         continue;
                     }
                     if let Some(resume_cmd) = &action.resume_command {

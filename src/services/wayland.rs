@@ -126,7 +126,7 @@ impl Dispatch<ExtIdleNotificationV1, ()> for WaylandIdleData {
                 }
                 IdleEvent::Resumed => {
                     log_message("Compositor detected activity");
-                    timer.reset();
+                    timer.reset().await;
                 }
                 _ => {}
             }
