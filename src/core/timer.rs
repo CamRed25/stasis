@@ -334,16 +334,15 @@ impl IdleTimer {
                 self.lock_process_running = true;
                 self.advance_past_lock().await;
             } else {
+                if let Some(state) = &self.previous_brightness {
+                    log_message("Restoring brightness immediately after resume");
+                    restore_brightness(state);
+                }
                 self.last_activity = Instant::now();
                 self.is_idle_flags.iter_mut().for_each(|f| *f = false);
                 self.triggered_actions.iter_mut().for_each(|a| *a = None);
                 self.active_kinds.clear();
                 self.trigger_instant_actions().await;
-            }
-
-            if let Some(state) = &self.previous_brightness {
-                log_message("Restoring brightness immediately after resume");
-                restore_brightness(state);
             }
         }
     }
