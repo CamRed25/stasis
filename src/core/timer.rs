@@ -7,6 +7,7 @@ use futures::future::BoxFuture;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+use crate::core::actions::is_process_running;
 use crate::config::{IdleAction, IdleActionKind, IdleConfig};
 use crate::log::{log_error_message, log_message};
 use super::brightness::{capture_brightness, restore_brightness, BrightnessState};
@@ -188,7 +189,6 @@ impl IdleTimer {
         self.lock_resume_done = false;
         self.lock_resume_command = None;
 
-        // Find lock-screen timeout
         let lock_timeout = self
             .actions
             .iter()
@@ -196,10 +196,8 @@ impl IdleTimer {
             .map(|a| a.timeout_seconds)
             .unwrap_or(0);
 
-        // Move last_activity so elapsed ≈ lock timeout
         self.last_activity = Instant::now() - Duration::from_secs(lock_timeout as u64);
 
-        // Mark ONLY the lock-screen action as triggered
         for i in 0..self.actions.len() {
             let action = &self.actions[i];
             if action.kind == IdleActionKind::LockScreen {
@@ -213,7 +211,6 @@ impl IdleTimer {
             }
         }
 
-        // Reset debounce so `check_idle()` can proceed to next actions
         self.idle_debounce_until = None;
     }
 
@@ -256,7 +253,6 @@ impl IdleTimer {
                     return;
                 }
 
-                // Reset lock flag when going idle so we can log on next wake
                 self.lock_process_running = false;
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
@@ -428,20 +424,6 @@ impl IdleTimer {
     }
 }
 
-/// Check if a process is currently running by name
-async fn is_process_running(process_name: &str) -> bool {
-    let output = tokio::process::Command::new("pgrep")
-        .arg("-x")
-        .arg(process_name)
-        .output()
-        .await;
-
-    match output {
-        Ok(output) => output.status.success(),
-        Err(_) => false,
-    }
-}
-
 /// Spawn main idle monitor task
 pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
     tokio::spawn(async move {
@@ -470,3 +452,4 @@ pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()
         }
     })
 }
+
