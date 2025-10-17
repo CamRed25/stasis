@@ -23,15 +23,20 @@ impl IdleTimer {
         
         // Cancel any pending post-idle debounce when user becomes active again
         self.idle_debounce_until = None;
-
+      
         if was_idle {
             if let Some(state) = &self.previous_brightness {
                 restore_brightness(state);
             }
 
-            // Execute resume commands for all triggered actions that have one
+            // Execute resume commands for all triggered actions that have one,
+            // but SKIP lock-screen here — lock resume is handled by the lock monitor.
             for triggered_action in &self.triggered_actions {
                 if let Some(action) = triggered_action {
+                    if action.kind == crate::config::IdleActionKind::LockScreen {
+                        // skip lock resume here
+                        continue;
+                    }
                     if let Some(resume_cmd) = &action.resume_command {
                         let cmd_clone = resume_cmd.clone();
                         spawn_task_limited(&mut self.spawned_tasks, async move {
@@ -40,7 +45,7 @@ impl IdleTimer {
                     }
                 }
             }
-            
+
             self.suspend_occurred = false;
         }
 
@@ -59,7 +64,7 @@ impl IdleTimer {
         if inhibit {
             self.pause(true);
         } else {
-            self.resume(true);
+            self.resume(true).await;
         }
     }
 
@@ -76,45 +81,36 @@ impl IdleTimer {
     }
 
     /// Resumes idle timers manually or automatically.
-    pub fn resume(&mut self, manually: bool) {
+    pub async fn resume(&mut self, manually: bool) {
         if manually {
             if self.manually_paused {
                 self.manually_paused = false;
                 self.paused = false;
                 log_message("Idle timers manually resumed");
-                self.reset_state_after_resume();
+                self.reset_state_after_resume().await;
             }
         } else if !self.manually_paused && self.paused {
             self.paused = false;
             log_message("Idle timers automatically resumed");
-            self.reset_state_after_resume();
+            self.reset_state_after_resume().await;
         }
     }
 
-    /// Internal helper for restoring brightness and running resume command.
-    fn reset_state_after_resume(&mut self) {
-        let was_idle = self.is_idle_flags.iter().any(|&b| b);
+    /// Internal helper for running lock resume command 
+    pub async fn reset_state_after_resume(&mut self) {
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
 
-        if was_idle {
-            if let Some(state) = &self.previous_brightness {
-                restore_brightness(state);
+        if !self.lock_resume_done {
+            if let Some(cmd) = &self.lock_resume_command {
+                let cmd_clone = cmd.clone();
+                spawn_task_limited(&mut self.spawned_tasks, async move {
+                    sleep(Duration::from_millis(200)).await;
+                    let _ = super::actions::run_command_silent(&cmd_clone).await;
+                });
             }
-
-            // Execute resume commands for all triggered actions that have one
-            for triggered_action in &self.triggered_actions {
-                if let Some(action) = triggered_action {
-                    if let Some(resume_cmd) = &action.resume_command {
-                        let cmd_clone = resume_cmd.clone();
-                        spawn_task_limited(&mut self.spawned_tasks, async move {
-                            sleep(Duration::from_millis(200)).await;
-                            let _ = super::actions::run_command_silent(&cmd_clone).await;
-                        });
-                    }
-                }
-            }
+            self.lock_resume_done = true;
         }
 
         self.active_kinds.clear();

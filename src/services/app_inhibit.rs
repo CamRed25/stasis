@@ -192,7 +192,7 @@ impl AppInhibitor {
     }
 }
 
-pub fn spawn_app_inhibit_task(
+pub async fn spawn_app_inhibit_task(
     idle_timer: Arc<Mutex<IdleTimer>>,
     cfg: Arc<IdleConfig>
 ) -> Arc<Mutex<AppInhibitor>> {
@@ -210,7 +210,7 @@ pub fn spawn_app_inhibit_task(
                 if any_running && !was_running {
                     timer.pause(false);
                 } else if !any_running && was_running {
-                    timer.resume(false);
+                    timer.resume(false).await;
                 }
             }
             tokio::time::sleep(std::time::Duration::from_secs(4)).await;

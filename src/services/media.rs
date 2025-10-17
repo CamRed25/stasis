@@ -81,7 +81,7 @@ pub fn spawn_media_monitor(
                 timer.pause(false);
                 media_playing = true;
             } else if !any_playing && media_playing {
-                timer.resume(false);
+                timer.resume(false).await;
                 media_playing = false;
             }
         }

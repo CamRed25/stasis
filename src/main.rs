@@ -187,6 +187,7 @@ async fn main() -> Result<()> {
 
     // --- Spawn background tasks ---
     core::timer::spawn_idle_task(Arc::clone(&idle_timer)).await;
+    core::timer::spawn_lock_monitor_task(Arc::clone(&idle_timer)).await;
     services::input::spawn_input_task(Arc::clone(&idle_timer));
 
     // --- Spawn suspend event listener ---
@@ -205,7 +206,7 @@ async fn main() -> Result<()> {
     let app_inhibitor = services::app_inhibit::spawn_app_inhibit_task(
         Arc::clone(&idle_timer),
         Arc::clone(&cfg)
-    );
+    ).await;
 
     // --- Wayland setup ---
     let wl_data = setup_wayland(Arc::clone(&idle_timer), cfg.respect_idle_inhibitors).await?;

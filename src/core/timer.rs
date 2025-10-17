@@ -31,9 +31,13 @@ pub struct IdleTimer {
     pub(crate) ac_actions: Vec<IdleAction>,
     pub(crate) battery_actions: Vec<IdleAction>,
     pub(crate) pre_suspend_command: Option<String>,
+    pub(crate) lock_resume_done: bool,
+    pub(crate) lock_resume_command: Option<String>,
 
     idle_task_handle: Option<JoinHandle<()>>,
+    lock_monitor_handle: Option<JoinHandle<()>>,
     compositor_managed: bool,
+    lock_process_running: bool,
 }
 
 impl IdleTimer {
@@ -91,6 +95,10 @@ impl IdleTimer {
             suspend_occurred: false,
             spawned_tasks: Vec::new(),
             idle_task_handle: None,
+            lock_monitor_handle: None,
+            lock_process_running: false,
+            lock_resume_done: false,
+            lock_resume_command: None,
         };
 
         timer
@@ -157,10 +165,57 @@ impl IdleTimer {
         })
     }
 
+    /// Check if a lock command process is currently running
+    pub async fn is_lock_running(&self) -> bool {
+        for action in &self.actions {
+            if action.kind == IdleActionKind::LockScreen {
+                if let Some(lock_cmd) = &action.lock_command {
+                    // Extract process name from command
+                    let process_name = lock_cmd.split_whitespace().next().unwrap_or("");
+                    if !process_name.is_empty() {
+                        if is_process_running(process_name).await {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Advance timers past lock-screen when lock is detected
+    pub async fn advance_past_lock(&mut self) {
+        log_message("Lock process detected, advancing timers past lock-screen");
+
+        self.lock_resume_done = false;
+        self.lock_resume_command = None;
+
+        for i in 0..self.actions.len() {
+            if self.actions[i].kind == IdleActionKind::LockScreen {
+                self.is_idle_flags[i] = true;
+                self.triggered_actions[i] = Some(self.actions[i].clone());
+                self.active_kinds.insert(self.actions[i].kind.to_string());
+
+                if let Some(resume) = &self.actions[i].resume_command {
+                    self.lock_resume_command = Some(resume.clone());
+                }
+            }
+        }
+    }
+
     pub async fn check_idle(&mut self) {
         if self.paused {
             return;
         }
+
+        // Check if lock process is running
+        let lock_running = self.is_lock_running().await;
+        
+        if lock_running && !self.lock_process_running {
+            // Lock just started
+            self.lock_process_running = true;
+            self.advance_past_lock().await;
+        } 
 
         if let Some(until) = self.debounce_until {
             if Instant::now() < until {
@@ -248,8 +303,6 @@ impl IdleTimer {
         self.trigger_instant_actions().await;
     }
 
-
-
     pub async fn trigger_pre_suspend(&mut self, rewind_timers: bool, manual: bool) {
         if !manual {
             self.suspend_occurred = true;
@@ -264,20 +317,25 @@ impl IdleTimer {
             if let Err(e) = super::actions::run_command_detached(&cmd_clone).await {
                 log_message(&format!("Pre-suspend command failed: {}", e));
             }
- 
         }
 
         if has_pre_suspend {
             tokio::time::sleep(std::time::Duration::from_millis(700)).await;
         }
 
-       if rewind_timers {
-            self.last_activity = Instant::now();
-            self.is_idle_flags.iter_mut().for_each(|f| *f = false);
-            self.triggered_actions.iter_mut().for_each(|a| *a = None);
-            self.active_kinds.clear();
-            self.trigger_instant_actions().await;
-       }
+        if rewind_timers {
+            // Check if lock is running on resume
+            if self.is_lock_running().await {
+                self.lock_process_running = true;
+                self.advance_past_lock().await;
+            } else {
+                self.last_activity = Instant::now();
+                self.is_idle_flags.iter_mut().for_each(|f| *f = false);
+                self.triggered_actions.iter_mut().for_each(|a| *a = None);
+                self.active_kinds.clear();
+                self.trigger_instant_actions().await;
+            }
+        }
     }
  
     pub fn shortest_timeout(&self) -> Duration {
@@ -352,10 +410,27 @@ impl IdleTimer {
         if let Some(handle) = self.idle_task_handle.take() {
             handle.abort();
         }
+        if let Some(handle) = self.lock_monitor_handle.take() {
+            handle.abort();
+        }
 
         for handle in self.spawned_tasks.drain(..) {
             handle.abort();
         }
+    }
+}
+
+/// Check if a process is currently running by name
+async fn is_process_running(process_name: &str) -> bool {
+    let output = tokio::process::Command::new("pgrep")
+        .arg("-x")
+        .arg(process_name)
+        .output()
+        .await;
+
+    match output {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
     }
 }
 
@@ -387,3 +462,35 @@ pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()
         }
     })
 }
+
+/// Spawn lock process monitor task (checks every 2 seconds)
+pub async fn spawn_lock_monitor_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        // Granularity target: check every 250ms (4× per second)
+        // - fast enough to react almost instantly
+        // - light enough to stay near idle CPU levels
+        let check_interval = Duration::from_millis(250);
+
+        loop {
+            let mut timer = idle_timer.lock().await;
+
+            let lock_running = timer.is_lock_running().await;
+
+            if lock_running && !timer.lock_process_running {
+                // Lock just started
+                timer.lock_process_running = true;
+                timer.advance_past_lock().await;
+            } else if !lock_running && timer.lock_process_running {
+                // Lock just ended
+                timer.lock_process_running = false;
+                log_message("Lock process ended, resetting timers");
+                timer.reset_state_after_resume().await;
+            }
+
+            drop(timer); // release the lock before sleeping
+            tokio::time::sleep(check_interval).await;
+        }
+    })
+}
+
+
