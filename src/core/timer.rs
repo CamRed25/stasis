@@ -34,11 +34,11 @@ pub struct IdleTimer {
     pub(crate) pre_suspend_command: Option<String>,
     pub(crate) lock_resume_done: bool,
     pub(crate) lock_resume_command: Option<String>,
+    pub(crate) lock_process_running: bool,
 
     idle_task_handle: Option<JoinHandle<()>>,
     lock_monitor_handle: Option<JoinHandle<()>>,
     compositor_managed: bool,
-    pub(crate) lock_process_running: bool,
 }
 
 impl IdleTimer {
@@ -74,12 +74,14 @@ impl IdleTimer {
 
         let actions_clone = actions.clone();
         let now = Instant::now();
+        let debounce_delay = Duration::from_secs(cfg.debounce_seconds as u64);
+        let debounce_until = Some(now + debounce_delay);
         
         let timer = Self {
             cfg: cfg.clone(),
             start_time: now,
             last_activity: now,
-            debounce_until: None,
+            debounce_until,
             idle_debounce_until: None,
             actions,
             ac_actions,
@@ -253,7 +255,6 @@ impl IdleTimer {
                     return;
                 }
 
-                self.lock_process_running = false;
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(key.clone());
@@ -453,3 +454,56 @@ pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()
     })
 }
 
+/// Spawn dedicated lock monitor task - polls quickly to detect lock exit
+pub async fn spawn_lock_monitor_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
+    // Check if there's a lock action configured before starting the monitor
+    let has_lock_action = {
+        let timer = idle_timer.lock().await;
+        timer.actions.iter().any(|a| a.kind == IdleActionKind::LockScreen)
+    };
+
+    tokio::spawn(async move {
+        if !has_lock_action {
+            // No lock action configured, just sleep forever
+            std::future::pending::<()>().await;
+            return;
+        }
+
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
+
+        loop {
+            ticker.tick().await;
+            let mut timer = idle_timer.lock().await;
+
+            // Only monitor if we detected lock during a wake event
+            // (lock_process_running is only set to true in apply_reset when lock is detected on wake)
+            if timer.lock_process_running && !timer.lock_resume_done {
+                let lock_running = timer.is_lock_running().await;
+                
+                if !lock_running {
+                    // Lock just exited after user woke - fire resume command and reset timers
+                    log_message("Lock screen exited — firing lock resume command and resetting timers");
+                    
+                    if let Some(cmd) = &timer.lock_resume_command {
+                        let cmd_clone = cmd.clone();
+                        spawn_task_limited(&mut timer.spawned_tasks, async move {
+                            let _ = super::actions::run_command_silent(&cmd_clone).await;
+                        });
+                    }
+                    
+                    timer.lock_resume_done = true;
+                    timer.lock_process_running = false;
+                    
+                    // Reset timers so they start counting from zero again with debounce
+                    timer.last_activity = Instant::now();
+                    timer.is_idle_flags.fill(false);
+                    timer.triggered_actions.iter_mut().for_each(|a| *a = None);
+                    timer.active_kinds.clear();
+                    
+                    let debounce_delay = Duration::from_secs(timer.cfg.debounce_seconds as u64);
+                    timer.debounce_until = Some(Instant::now() + debounce_delay);
+                }
+            }
+        }
+    })
+}

@@ -187,6 +187,7 @@ async fn main() -> Result<()> {
 
     // --- Spawn background tasks ---
     core::timer::spawn_idle_task(Arc::clone(&idle_timer)).await;
+    core::timer::spawn_lock_monitor_task(Arc::clone(&idle_timer)).await;
     services::input::spawn_input_task(Arc::clone(&idle_timer));
 
     // --- Spawn suspend event listener ---
