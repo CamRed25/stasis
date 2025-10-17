@@ -1,5 +1,4 @@
 use std::time::{Duration, Instant};
-use tokio::time::sleep;
 use super::tasks::{cleanup_tasks, spawn_task_limited};
 use crate::core::brightness::restore_brightness;
 use crate::log::log_message;
@@ -24,14 +23,13 @@ impl IdleTimer {
 
         if was_idle {
             let lock_running = self.is_lock_running().await;
+            
             if lock_running {
                 if !self.lock_process_running {
                     log_message("Lock detected on wake — advancing past lock timeout");
                     self.lock_process_running = true;
                 }
                 let _ = self.advance_past_lock().await;
-            } else {
-                self.lock_process_running = false;
             }
 
             if let Some(state) = &self.previous_brightness {
@@ -98,22 +96,11 @@ impl IdleTimer {
         }
     }
 
-    /// Internal helper for running lock resume command 
+    /// Internal helper for handling resume when timers are unpaused
     pub async fn reset_state_after_resume(&mut self) {
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
-
-        if !self.lock_resume_done {
-            if let Some(cmd) = &self.lock_resume_command {
-                let cmd_clone = cmd.clone();
-                spawn_task_limited(&mut self.spawned_tasks, async move {
-                    sleep(Duration::from_millis(200)).await;
-                    let _ = super::actions::run_command_silent(&cmd_clone).await;
-                });
-            }
-            self.lock_resume_done = true;
-        }
 
         self.active_kinds.clear();
         self.previous_brightness = None;
