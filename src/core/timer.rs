@@ -340,6 +340,11 @@ impl IdleTimer {
                 self.active_kinds.clear();
                 self.trigger_instant_actions().await;
             }
+
+            if let Some(state) = &self.previous_brightness {
+                log_message("Restoring brightness immediately after resume");
+                restore_brightness(state);
+            }
         }
     }
  
