@@ -23,7 +23,6 @@ impl IdleTimer {
         self.idle_debounce_until = None;
 
         if was_idle {
-            // Only check lock and advance if we're actually waking from idle
             let lock_running = self.is_lock_running().await;
             if lock_running {
                 if !self.lock_process_running {
@@ -61,12 +60,10 @@ impl IdleTimer {
         self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 
-    /// Returns whether manual inhibition is currently active.
     pub fn is_manually_inhibited(&self) -> bool {
         self.manually_paused
     }
 
-    /// Sets manual inhibition flag (async-safe wrapper).
     pub async fn set_manual_inhibit(&mut self, inhibit: bool) {
         if inhibit {
             self.pause(true);
@@ -75,7 +72,6 @@ impl IdleTimer {
         }
     }
 
-    /// Pauses idle timers manually or automatically.
     pub fn pause(&mut self, manually: bool) {
         if manually {
             self.manually_paused = true;
@@ -87,7 +83,6 @@ impl IdleTimer {
         }
     }
 
-    /// Resumes idle timers manually or automatically.
     pub async fn resume(&mut self, manually: bool) {
         if manually {
             if self.manually_paused {
