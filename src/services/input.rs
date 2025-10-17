@@ -74,7 +74,7 @@ pub fn spawn_input_task(idle_timer: Arc<Mutex<IdleTimer>>) {
             if reset_needed {
                 rt.block_on(async {
                     let mut timer = idle_timer_clone.lock().await;
-                    timer.reset();
+                    timer.reset().await;
                 });
             }
 
