@@ -121,5 +121,12 @@ impl IdleTimer {
         }
 
         self.triggered_actions.iter_mut().for_each(|a| *a = None);
+
+        if self.is_lock_running().await && (!self.lock_notified || self.action_epoch > self.lock_advanced_epoch) {
+            log_message("Resuming — lock detected, advancing timers past lock");
+            self.advance_past_lock().await;
+            self.lock_notified = true;
+            self.lock_advanced_epoch = self.action_epoch;
+        }
     }
 }
