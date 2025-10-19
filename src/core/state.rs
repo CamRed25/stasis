@@ -8,6 +8,7 @@ impl IdleTimer {
     /// Resets idle timer activity and sets a short debounce window.
     pub async fn reset(&mut self) {
         self.last_activity = Instant::now();
+
         self.apply_reset().await;
         let debounce_delay = Duration::from_secs(self.cfg.debounce_seconds as u64);
         self.debounce_until = Some(Instant::now() + debounce_delay);
@@ -16,45 +17,44 @@ impl IdleTimer {
     /// Internal helper for clearing idle flags, brightness state, and resuming.
     pub(crate) async fn apply_reset(&mut self) {
         let was_idle = self.is_idle_flags.iter().any(|&b| b);
+
+        self.lock_resume_command = None;
+        self.lock_pid = None; // Clear tracked lock PID on reset
+        
+        if let Some(state) = self.previous_brightness.take() {
+            log_message("Restoring brightness immediately on user activity");
+            restore_brightness(&state);
+        }
+        
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
-        self.is_idle_flags.fill(false);
-        self.idle_debounce_until = None;
-
+        
         if was_idle {
-            let lock_running = self.is_lock_running().await;
-            
-            if lock_running {
-                if !self.lock_process_running {
-                    log_message("Lock detected on wake — advancing past lock timeout");
-                    self.lock_process_running = true;
-                }
-                let _ = self.advance_past_lock().await;
-            }
-
-            if let Some(state) = &self.previous_brightness {
-                restore_brightness(state);
-            }
-
             for triggered_action in &self.triggered_actions {
                 if let Some(action) = triggered_action {
                     if action.kind == crate::config::IdleActionKind::LockScreen {
                         continue;
                     }
+                    
                     if let Some(resume_cmd) = &action.resume_command {
                         let cmd_clone = resume_cmd.clone();
+                        let action_kind = format!("{:?}", action.kind);
                         spawn_task_limited(&mut self.spawned_tasks, async move {
-                            let _ = super::actions::run_command_silent(&cmd_clone).await;
+                            log_message(&format!("Firing resume command for {}", action_kind));
+                            if let Err(e) = super::actions::run_command_silent(&cmd_clone).await {
+                                log_message(&format!("Resume command failed: {}", e));
+                            }
                         });
                     }
                 }
             }
-
+            
             self.suspend_occurred = false;
         }
-
+        
+        self.is_idle_flags.fill(false);
+        self.idle_debounce_until = None;
         self.active_kinds.clear();
-        self.previous_brightness = None;
         self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 
@@ -73,7 +73,7 @@ impl IdleTimer {
     pub fn pause(&mut self, manually: bool) {
         if manually {
             self.manually_paused = true;
-            self.paused = false; // Clear automatic pause when manually pausing
+            self.paused = false;
             log_message("Idle timers manually paused");
         } else if !self.manually_paused {
             self.paused = true;
@@ -101,9 +101,15 @@ impl IdleTimer {
         self.last_activity = Instant::now();
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
-
         self.active_kinds.clear();
-        self.previous_brightness = None;
+        self.lock_pid = None; // Clear tracked lock PID on resume
+        
+        // Restore brightness if we have it saved
+        if let Some(state) = self.previous_brightness.take() {
+            log_message("Restoring brightness on manual resume");
+            restore_brightness(&state);
+        }
+        
         self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 }
