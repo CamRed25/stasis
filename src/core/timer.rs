@@ -34,6 +34,9 @@ pub struct IdleTimer {
     pub(crate) pre_suspend_command: Option<String>,
     pub(crate) lock_resume_command: Option<String>,
     pub(crate) lock_pid: Option<u32>,
+    pub(crate) lock_notified: bool,
+    pub(crate) action_epoch: u64,
+    pub(crate) lock_advanced_epoch: u64,
 
     idle_task_handle: Option<JoinHandle<()>>,
     lock_monitor_handle: Option<JoinHandle<()>>,
@@ -100,6 +103,9 @@ impl IdleTimer {
             lock_monitor_handle: None,
             lock_resume_command: None,
             lock_pid: None,
+            lock_notified: false,
+            action_epoch: 0,
+            lock_advanced_epoch: 0,
         };
 
         timer
@@ -211,19 +217,16 @@ impl IdleTimer {
     pub async fn advance_past_lock(&mut self) {
         let now = Instant::now();
 
-        // Mark lock action as triggered
         for (i, action) in self.actions.iter().enumerate() {
             if action.kind == IdleActionKind::LockScreen {
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(action.kind.to_string());
 
-                // Store resume command
                 if let Some(resume) = &action.resume_command {
                     self.lock_resume_command = Some(resume.clone());
                 }
 
-                // Adjust last_activity to simulate time spent locked
                 self.last_activity = now - Duration::from_secs(action.timeout_seconds);
             }
         }
@@ -266,6 +269,10 @@ impl IdleTimer {
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(key.clone());
 
+                if action.kind != IdleActionKind::LockScreen {
+                    self.action_epoch = self.action_epoch.wrapping_add(1);
+                }
+
                 log_message(&format!(
                     "Action triggered: kind={} timeout={:?}",
                     action.kind, timeout
@@ -291,6 +298,7 @@ impl IdleTimer {
                                 match super::actions::run_command_detached(&cmd_clone).await {
                                     Ok(pid) => {
                                         self.lock_pid = Some(pid);
+                                        self.lock_notified = false;
                                         log_message(&format!("Lock screen started with PID: {}", pid));
                                     }
                                     Err(e) => {
@@ -485,12 +493,14 @@ pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()
 pub async fn spawn_lock_monitor_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
     let has_lock_action = {
         let timer = idle_timer.lock().await;
-        timer.actions.iter().any(|a| a.kind == crate::config::IdleActionKind::LockScreen)
+        timer
+            .actions
+            .iter()
+            .any(|a| a.kind == crate::config::IdleActionKind::LockScreen)
     };
 
     tokio::spawn(async move {
         if !has_lock_action {
-            // No lock action configured, never run
             std::future::pending::<()>().await;
             return;
         }
@@ -501,38 +511,22 @@ pub async fn spawn_lock_monitor_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinH
         loop {
             ticker.tick().await;
             let mut timer = idle_timer.lock().await;
-
             let lock_running = timer.is_lock_running().await;
 
-            // Lock started
-            if lock_running && !was_locked {
-                log_message("Lock screen detected — advancing timers past lock");
-                timer.advance_past_lock().await;
-            }
-
-            // Lock exited
-            if !lock_running && was_locked {
-                log_message("Lock screen exited — resetting timers");
-
-                if let Some(cmd) = &timer.lock_resume_command {
-                    if timer.elapsed_idle() < Duration::from_secs(1) {
-                        let cmd_clone = cmd.clone();
-                        spawn_task_limited(&mut timer.spawned_tasks, async move {
-                            let _ = crate::core::actions::run_command_silent(&cmd_clone).await;
-                        });
-                        log_message("User active after lock — executed lock resume command");
-                    }
-                }
-
-                // Clear the PID since lock has exited
+            // Detect when lock stops running
+            if was_locked && !lock_running {
+                log_message("Lock screen exited — ready for next advance");
                 timer.lock_pid = None;
-                
-                // Reset idle state
-                timer.reset().await;
                 timer.lock_resume_command = None;
+                timer.lock_notified = false;
+                timer.action_epoch = 0;    
+                timer.lock_advanced_epoch = 0;
             }
 
             was_locked = lock_running;
         }
     })
 }
+
+
+

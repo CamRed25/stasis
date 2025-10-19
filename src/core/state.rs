@@ -18,6 +18,14 @@ impl IdleTimer {
     pub(crate) async fn apply_reset(&mut self) {
         let was_idle = self.is_idle_flags.iter().any(|&b| b);
 
+        if self.is_lock_running().await && (!self.lock_notified || self.action_epoch > self.lock_advanced_epoch) {
+            log_message("User active — lock detected, advancing timers past lock");
+            self.advance_past_lock().await;
+            self.lock_notified = true;
+            self.lock_advanced_epoch = self.action_epoch;
+        }
+
+
         self.lock_resume_command = None;
         self.lock_pid = None; // Clear tracked lock PID on reset
         
@@ -102,14 +110,16 @@ impl IdleTimer {
         cleanup_tasks(&mut self.spawned_tasks);
         self.is_idle_flags.fill(false);
         self.active_kinds.clear();
-        self.lock_pid = None; // Clear tracked lock PID on resume
-        
+
+        // Clear tracked lock PID on resume
+        self.lock_pid = None;
+
         // Restore brightness if we have it saved
         if let Some(state) = self.previous_brightness.take() {
             log_message("Restoring brightness on manual resume");
             restore_brightness(&state);
         }
-        
+
         self.triggered_actions.iter_mut().for_each(|a| *a = None);
     }
 }

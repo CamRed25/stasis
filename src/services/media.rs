@@ -29,48 +29,58 @@ pub fn spawn_media_monitor(
     task::spawn(async move {
         let mut ticker = time::interval(interval);
         let mut media_playing = false;
+        let mut last_error: Option<String> = None; // track last error for debounced logging
         
         loop {
             ticker.tick().await;
             
             let any_playing = match PlayerFinder::new() {
                 Ok(finder) => match finder.find_all() {
-                    Ok(players) => players.iter().any(|player| {
-                        let identity = player.identity();
-                        let bus_name = player.bus_name().to_string();
-                        
-                        // Check if this player is playing
-                        let is_playing = player
-                            .get_playback_status()
-                            .map(|s| s == PlaybackStatus::Playing)
-                            .unwrap_or(false);
-                        
-                        // If not playing, it doesn't matter
-                        if !is_playing {
-                            return false;
-                        }
-                        
-                        // If playing, check if we should ignore it
-                        if ignore_remote_media {
-                            // Skip (ignore) this player if it's in the ignore list
-                            if IGNORED_PLAYERS
-                                .iter()
-                                .any(|s| identity.contains(s) || bus_name.contains(s))
-                            {
-                                return false; // Don't count this player
+                    Ok(players) => {
+                        last_error = None; // reset last error on success
+                        players.iter().any(|player| {
+                            let identity = player.identity();
+                            let bus_name = player.bus_name().to_string();
+                            
+                            // Check if this player is playing
+                            let is_playing = player
+                                .get_playback_status()
+                                .map(|s| s == PlaybackStatus::Playing)
+                                .unwrap_or(false);
+                            
+                            // If not playing, it doesn't matter
+                            if !is_playing {
+                                return false;
                             }
-                        }
-                        
-                        // Player is playing and not ignored
-                        true
-                    }),
+                            
+                            // If playing, check if we should ignore it
+                            if ignore_remote_media {
+                                if IGNORED_PLAYERS
+                                    .iter()
+                                    .any(|s| identity.contains(s) || bus_name.contains(s))
+                                {
+                                    return false; // Don't count this player
+                                }
+                            }
+                            
+                            true
+                        })
+                    }
                     Err(e) => {
-                        log_error_message(&format!("MPRIS: failed to list players: {:?}", e));
+                        let msg = format!("MPRIS: failed to list players: {:?}", e);
+                        if last_error.as_ref() != Some(&msg) {
+                            log_error_message(&msg);
+                            last_error = Some(msg);
+                        }
                         false
                     }
                 },
                 Err(e) => {
-                    log_error_message(&format!("MPRIS: failed to create finder: {:?}", e));
+                    let msg = format!("MPRIS: failed to create finder: {:?}", e);
+                    if last_error.as_ref() != Some(&msg) {
+                        log_error_message(&msg);
+                        last_error = Some(msg);
+                    }
                     false
                 }
             };
