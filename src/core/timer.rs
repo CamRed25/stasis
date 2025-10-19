@@ -32,9 +32,8 @@ pub struct IdleTimer {
     pub(crate) ac_actions: Vec<IdleAction>,
     pub(crate) battery_actions: Vec<IdleAction>,
     pub(crate) pre_suspend_command: Option<String>,
-    pub(crate) lock_resume_done: bool,
     pub(crate) lock_resume_command: Option<String>,
-    pub(crate) lock_process_running: bool,
+    pub(crate) lock_pid: Option<u32>,
 
     idle_task_handle: Option<JoinHandle<()>>,
     lock_monitor_handle: Option<JoinHandle<()>>,
@@ -99,9 +98,8 @@ impl IdleTimer {
             spawned_tasks: Vec::new(),
             idle_task_handle: None,
             lock_monitor_handle: None,
-            lock_process_running: false,
-            lock_resume_done: false,
             lock_resume_command: None,
+            lock_pid: None,
         };
 
         timer
@@ -153,13 +151,28 @@ impl IdleTimer {
                         super::actions::ActionRequest::PreSuspend => {
                             self.trigger_pre_suspend(false, false).await;
                         }
-                        super::actions::ActionRequest::RunCommand(cmd) => {
+                       super::actions::ActionRequest::RunCommand(cmd) => {
                             let cmd_clone = cmd.clone();
-                            spawn_task_limited(&mut self.spawned_tasks, async move {
-                                if let Err(e) = super::actions::run_command_silent(&cmd_clone).await {
-                                    log_error_message(&format!("Failed to run command '{}': {}", cmd_clone, e));
+                            let is_lock = action.kind == IdleActionKind::LockScreen;
+                            
+                            if is_lock {
+                                // For lock screen, run detached and capture PID
+                                match super::actions::run_command_detached(&cmd_clone).await {
+                                    Ok(pid) => {
+                                        self.lock_pid = Some(pid);
+                                        log_message(&format!("Lock screen started with PID: {}", pid));
+                                    }
+                                    Err(e) => {
+                                        log_error_message(&format!("Failed to run detached lock command '{}': {}", cmd_clone, e));
+                                    }
                                 }
-                            });
+                            } else {
+                                spawn_task_limited(&mut self.spawned_tasks, async move {
+                                    if let Err(e) = super::actions::run_command_silent(&cmd_clone).await {
+                                        log_error_message(&format!("Failed to run command '{}': {}", cmd_clone, e));
+                                    }
+                                });
+                            }
                         }
                         super::actions::ActionRequest::Skip(_) => {}
                     }
@@ -170,10 +183,18 @@ impl IdleTimer {
 
     /// Check if a lock command process is currently running
     pub async fn is_lock_running(&self) -> bool {
+        // First check if we have a tracked PID
+        if let Some(pid) = self.lock_pid {
+            // Check if this specific PID is still alive
+            if is_process_running(&pid.to_string()).await {
+                return true;
+            }
+        }
+        
+        // Fallback: check by process name
         for action in &self.actions {
             if action.kind == IdleActionKind::LockScreen {
                 if let Some(lock_cmd) = &action.lock_command {
-                    // Extract process name from command
                     let process_name = lock_cmd.split_whitespace().next().unwrap_or("");
                     if !process_name.is_empty() {
                         if is_process_running(process_name).await {
@@ -188,32 +209,26 @@ impl IdleTimer {
 
     /// Advance timers past lock-screen when lock is detected
     pub async fn advance_past_lock(&mut self) {
-        self.lock_resume_done = false;
-        self.lock_resume_command = None;
+        let now = Instant::now();
 
-        let lock_timeout = self
-            .actions
-            .iter()
-            .find(|a| a.kind == IdleActionKind::LockScreen)
-            .map(|a| a.timeout_seconds)
-            .unwrap_or(0);
-
-        self.last_activity = Instant::now() - Duration::from_secs(lock_timeout as u64);
-
-        for i in 0..self.actions.len() {
-            let action = &self.actions[i];
+        // Mark lock action as triggered
+        for (i, action) in self.actions.iter().enumerate() {
             if action.kind == IdleActionKind::LockScreen {
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(action.kind.to_string());
 
+                // Store resume command
                 if let Some(resume) = &action.resume_command {
                     self.lock_resume_command = Some(resume.clone());
                 }
+
+                // Adjust last_activity to simulate time spent locked
+                self.last_activity = now - Duration::from_secs(action.timeout_seconds);
             }
         }
 
-        self.idle_debounce_until = None;
+        cleanup_tasks(&mut self.spawned_tasks);
     }
 
     pub async fn check_idle(&mut self) {
@@ -240,24 +255,21 @@ impl IdleTimer {
                 continue;
             }
 
+            if action.kind == IdleActionKind::LockScreen && self.is_lock_running().await {
+                continue;
+            }
+
             let timeout = Duration::from_secs(action.timeout_seconds);
 
             if elapsed >= timeout {
-                if let Some(until) = self.idle_debounce_until {
-                    if Instant::now() < until {
-                        return;
-                    } else {
-                        self.idle_debounce_until = None;
-                    }
-                } else {
-                    let debounce_delay = Duration::from_secs(self.cfg.debounce_seconds as u64);
-                    self.idle_debounce_until = Some(Instant::now() + debounce_delay);
-                    return;
-                }
-
                 self.is_idle_flags[i] = true;
                 self.triggered_actions[i] = Some(action.clone());
                 self.active_kinds.insert(key.clone());
+
+                log_message(&format!(
+                    "Action triggered: kind={} timeout={:?}",
+                    action.kind, timeout
+                ));
 
                 if action.kind == IdleActionKind::Brightness && self.previous_brightness.is_none() {
                     if let Some(state) = capture_brightness() {
@@ -269,15 +281,29 @@ impl IdleTimer {
                 for req in requests {
                     match req {
                         super::actions::ActionRequest::PreSuspend => {
-                            // Skip
                         }
                         super::actions::ActionRequest::RunCommand(cmd) => {
                             let cmd_clone = cmd.clone();
-                            spawn_task_limited(&mut self.spawned_tasks, async move {
-                                if let Err(e) = super::actions::run_command_silent(&cmd_clone).await {
-                                    log_error_message(&format!("Failed to run command '{}': {}", cmd_clone, e));
+                            let is_lock = action.kind == IdleActionKind::LockScreen;
+                            
+                            if is_lock {
+                                // For lock screen, run detached and capture PID
+                                match super::actions::run_command_detached(&cmd_clone).await {
+                                    Ok(pid) => {
+                                        self.lock_pid = Some(pid);
+                                        log_message(&format!("Lock screen started with PID: {}", pid));
+                                    }
+                                    Err(e) => {
+                                        log_error_message(&format!("Failed to run detached lock command '{}': {}", cmd_clone, e));
+                                    }
                                 }
-                            });
+                            } else {
+                                spawn_task_limited(&mut self.spawned_tasks, async move {
+                                    if let Err(e) = super::actions::run_command_silent(&cmd_clone).await {
+                                        log_error_message(&format!("Failed to run command '{}': {}", cmd_clone, e));
+                                    }
+                                });
+                            }
                         }
                         super::actions::ActionRequest::Skip(_) => {}
                     }
@@ -328,21 +354,18 @@ impl IdleTimer {
         }
 
         if rewind_timers {
+            if let Some(state) = &self.previous_brightness {
+                log_message("Restoring brightness immediately after resume from suspend");
+                restore_brightness(state);
+            }
+            
             // Check if lock is running on resume
             if self.is_lock_running().await {
                 log_message("Lock detected on suspend resume — advancing timers");
-                self.lock_process_running = true;
                 self.advance_past_lock().await;
             } else {
-                if let Some(state) = &self.previous_brightness {
-                    log_message("Restoring brightness immediately after resume");
-                    restore_brightness(state);
-                }
-                self.last_activity = Instant::now();
-                self.is_idle_flags.iter_mut().for_each(|f| *f = false);
-                self.triggered_actions.iter_mut().for_each(|a| *a = None);
-                self.active_kinds.clear();
-                self.trigger_instant_actions().await;
+                log_message("No lock on suspend resume — full reset");
+                self.reset().await;
             }
         }
     }
@@ -458,56 +481,58 @@ pub async fn spawn_idle_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()
     })
 }
 
-/// Spawn dedicated lock monitor task - polls quickly to detect lock exit
+/// Spawn dedicated lock monitor task - polls quickly to detect lock state changes
 pub async fn spawn_lock_monitor_task(idle_timer: Arc<Mutex<IdleTimer>>) -> JoinHandle<()> {
-    // Check if there's a lock action configured before starting the monitor
     let has_lock_action = {
         let timer = idle_timer.lock().await;
-        timer.actions.iter().any(|a| a.kind == IdleActionKind::LockScreen)
+        timer.actions.iter().any(|a| a.kind == crate::config::IdleActionKind::LockScreen)
     };
 
     tokio::spawn(async move {
         if !has_lock_action {
-            // No lock action configured, just sleep forever
+            // No lock action configured, never run
             std::future::pending::<()>().await;
             return;
         }
 
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
+        let mut was_locked = false;
 
         loop {
             ticker.tick().await;
             let mut timer = idle_timer.lock().await;
 
-            // Only monitor if we detected lock during a wake event
-            // (lock_process_running is only set to true in apply_reset when lock is detected on wake)
-            if timer.lock_process_running && !timer.lock_resume_done {
-                let lock_running = timer.is_lock_running().await;
-                
-                if !lock_running {
-                    // Lock just exited after user woke - fire resume command and reset timers
-                    log_message("Lock screen exited — firing lock resume command and resetting timers");
-                    
-                    if let Some(cmd) = &timer.lock_resume_command {
+            let lock_running = timer.is_lock_running().await;
+
+            // Lock started
+            if lock_running && !was_locked {
+                log_message("Lock screen detected — advancing timers past lock");
+                timer.advance_past_lock().await;
+            }
+
+            // Lock exited
+            if !lock_running && was_locked {
+                log_message("Lock screen exited — resetting timers");
+
+                if let Some(cmd) = &timer.lock_resume_command {
+                    if timer.elapsed_idle() < Duration::from_secs(1) {
                         let cmd_clone = cmd.clone();
                         spawn_task_limited(&mut timer.spawned_tasks, async move {
-                            let _ = super::actions::run_command_silent(&cmd_clone).await;
+                            let _ = crate::core::actions::run_command_silent(&cmd_clone).await;
                         });
+                        log_message("User active after lock — executed lock resume command");
                     }
-                    
-                    timer.lock_resume_done = true;
-                    timer.lock_process_running = false;
-                    
-                    // Reset timers so they start counting from zero again with debounce
-                    timer.last_activity = Instant::now();
-                    timer.is_idle_flags.fill(false);
-                    timer.triggered_actions.iter_mut().for_each(|a| *a = None);
-                    timer.active_kinds.clear();
-                    
-                    let debounce_delay = Duration::from_secs(timer.cfg.debounce_seconds as u64);
-                    timer.debounce_until = Some(Instant::now() + debounce_delay);
                 }
+
+                // Clear the PID since lock has exited
+                timer.lock_pid = None;
+                
+                // Reset idle state
+                timer.reset().await;
+                timer.lock_resume_command = None;
             }
+
+            was_locked = lock_running;
         }
     })
 }

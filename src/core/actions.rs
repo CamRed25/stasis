@@ -1,9 +1,9 @@
 use std::{
     time::Duration,
-    io::Result as IoResult
 };
 use eyre::Result;
 use tokio::process::Command;
+use std::process::{Stdio};
 
 use crate::config::{IdleAction, IdleActionKind};
 use crate::log::log_message;
@@ -77,17 +77,23 @@ pub async fn run_command_silent(cmd: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn run_command_detached(cmd: &str) -> IoResult<()> {
-    let _child = Command::new("sh")
-        .arg("-c")
-        .arg(cmd)
-        .envs(std::env::vars())
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+pub async fn run_command_detached(command: &str) -> Result<u32, Box<dyn std::error::Error>> {
+    let parts: Vec<&str> = command.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("Empty command".into());
+    }
+
+    let child = Command::new(parts[0])
+        .args(&parts[1..])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn()?;
 
-    Ok(())
+    let pid = child.id().ok_or("Failed to get child PID")?;
+    
+    // Don't wait for the child - let it run detached
+    Ok(pid)
 }
 
 pub async fn is_process_running(cmd: &str) -> bool {
