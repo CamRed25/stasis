@@ -3,7 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    stasis.url = "github:saltnpepper97/stasis/main";
+    stasis.url = "github:CamRed25/stasis";
   };
 
   outputs = {
@@ -14,7 +14,7 @@
     pkgs = nixpkgs.legacyPackages.${system};
 
     stasisSrc = builtins.fetchGit {
-      url = "https://github.com/saltnpepper97/stasis.git";
+      url = "https://github.com/CamRed25/stasis.git";
       ref = "refs/heads/main";
       allRefs = true;
     };
