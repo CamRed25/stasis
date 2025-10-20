@@ -18,22 +18,14 @@
       allRefs = true;
     };
 
-    stasisDerivation = pkgs.stdenv.mkDerivation {
+    stasisDerivation = pkgs.buildRustPackage rec {
       pname = "stasis";
       version = "latest";
-
       src = stasisSrc;
+      # Remove this line if the Cargo.lock is inside the fetched source
+      cargoLock = ./Cargo.lock;
 
-      buildPhase = ''
-        cargo build --release --locked
-      '';
-
-      installPhase = ''
-        mkdir -p $out/bin
-        cp target/release/stasis $out/bin/
-      '';
-
-      # Add dependencies if needed
+      nativeBuildInputs = [pkgs.openssl]; # Add any dependencies here
     };
   in {
     packages.x86_64-linux = {
