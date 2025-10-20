@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    stasis.url = "github:saltnpepper97/stasis/main";
   };
 
   outputs = {
