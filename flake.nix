@@ -14,7 +14,7 @@
 
     stasisSrc = builtins.fetchGit {
       url = "https://github.com/saltnpepper97/stasis.git";
-      rev = "<commit-sha-or-branch>"; # specify if needed
+      rev = "a1b2c3d4e5f67890123456789abcdef012345678";
     };
 
     stasisDerivation = pkgs.stdenv.mkDerivation {
