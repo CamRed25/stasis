@@ -18,7 +18,7 @@
       allRefs = true;
     };
 
-    stasisDerivation = pkgs.buildRustPackage rec {
+    stasisDerivation = pkgs.rustPlatform.buildRustPackage rec {
       pname = "stasis";
       version = "latest";
       src = stasisSrc;
