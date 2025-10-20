@@ -23,7 +23,10 @@
       version = "latest";
       src = stasisSrc;
       # Remove this line if the Cargo.lock is inside the fetched source
-      cargoLock = ./Cargo.lock;
+      cargoLock = {
+        lockFile = ./Cargo.lock;
+        # outputHashes = { "dependency-name" = "<hash>"; };  # fill in if needed
+      };
 
       nativeBuildInputs = [pkgs.openssl]; # Add any dependencies here
     };
