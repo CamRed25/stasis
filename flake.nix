@@ -36,6 +36,7 @@
     };
   in {
     packages.x86_64-linux = {
+      default = stasisDerivation;
       stasis = stasisDerivation;
     };
   };
