@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    stasis.url = "github:CamRed25/stasis";
   };
 
   outputs = {
@@ -11,30 +10,42 @@
     nixpkgs,
   }: let
     system = "x86_64-linux";
-    pkgs = nixpkgs.legacyPackages.${system};
-
-    stasisSrc = builtins.fetchGit {
-      url = "https://github.com/CamRed25/stasis.git";
-      ref = "refs/heads/main";
-      allRefs = true;
+    pkgs = import nixpkgs {
+      system = system;
+      overlays = [
+        (import (builtins.fetchTarball {
+          url = "https://github.com/oxalica/rust-overlay/archive/refs/heads/master.tar.gz";
+          sha256 = "sha256:16d5wlabz1fydrh2hsh4vabidysh7ja9agx4d5sf79811j7fwf7r";
+        }))
+      ];
     };
 
-    stasisDerivation = pkgs.rustPlatform.buildRustPackage rec {
+    stasisSrc = pkgs.fetchFromGitHub {
+      owner = "saltnpepper97";
+      repo = "stasis";
+      rev = "main";
+      sha256 = "sha256-MOb56PJS5gBITScJMvou/Z6IGN/Xfw+f114v5Fxctf0=";
+    };
+  in {
+    packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
       pname = "stasis";
       version = "latest";
       src = stasisSrc;
-      # Remove this line if the Cargo.lock is inside the fetched source
-      cargoLock = {
-        lockFile = ./Cargo.lock;
-        # outputHashes = { "dependency-name" = "<hash>"; };  # fill in if needed
-      };
-
-      nativeBuildInputs = [pkgs.openssl]; # Add any dependencies here
-    };
-  in {
-    packages.x86_64-linux = {
-      default = stasisDerivation;
-      stasis = stasisDerivation;
+      cargoHash = "sha256-M5L6kcx/FY+cusYhVSDoKCyuH0LpaPXzBo3wJZsLQak=";
+      nativeBuildInputs = [
+        pkgs.pkg-config
+        pkgs.openssl
+        pkgs.systemd
+        pkgs.dbus.dev
+        pkgs.libinput
+        pkgs.rust-bin.stable.latest.default
+      ];
+      buildInputs = [
+        pkgs.openssl
+        pkgs.systemd
+        pkgs.dbus.dev
+        pkgs.libinput
+      ];
     };
   };
 }
