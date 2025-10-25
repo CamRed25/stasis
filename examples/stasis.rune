@@ -1,8 +1,8 @@
 @author "Dustin Pilgrim"
 @description "Stasis configuration file"
 
-# Default timeout for apps (in seconds)
-app_default_timeout 300
+# global variable
+default_timeout 300
 
 #
 # Stasis configuration
@@ -12,9 +12,9 @@ stasis:
   monitor_media true
   ignore_remote_media true
   respect_idle_inhibitors true
-  #lid_close_action "lock-screen"
-  #lid_open_actoin "wake"
-  # Debounce: default is 3s; can be customized if needed
+  #lid_close_action "lock-screen" (lock-screen | suspend | custom | ignore)
+  #lid_open_action "wake" (wake | custom | ignore)
+  # debounce: default is 3s; can be customized if needed
   # debounce-seconds 4
 
   inhibit_apps [
@@ -26,15 +26,16 @@ stasis:
     r"firefox.*"
   ]
 
-  # Desktop-only idle actions (applies to all devices)
-  lock_screen:
-    timeout 300
+  # desktop-only idle actions (applies to all devices)
+  # both - and _ are excepted just do not mix_cases-like_this
+  lock-screen:
+    timeout default_timeout
     command "swaylock"
     resume-command "notify-send 'Welcome Back $env.USER!'"
   end
 
   dpms:
-    timeout 330
+    timeout 60
     command "niri msg action power-off-monitors"
     resume-command "niri msg action power-on-monitors"
   end
@@ -45,71 +46,62 @@ stasis:
     resume-command None
   end
 
-  # Laptop-only AC actions
+  # laptop-only AC actions
   on_ac:
 
-    # Step 1: Ensure screen is locked
+    # Step 1: Adjust brightness (instant)
+    # define it first so it does not retrigger later
+    custom-brightness-instant:
+      timeout 0
+      command "brightnessctl set 100%"
+    end
+
     lock_screen:
       timeout 300
       command "swaylock"
     end
 
-    # Step 2: Turn off monitors after locking
+    brightness:
+      timeout 10
+      command "brightnessctl set 30%"
+    end
+
     dpms:
-      timeout 300
+      timeout 60
       command "niri msg action power-off-monitors"
     end
 
-    # Step 3: Adjust brightness (instant)
-    brightness:
-      timeout 0
-      command "brightnessctl set 100%"
-    end
-
-    # Step 4: Suspend after idle period
     suspend:
-      timeout 1800
-      command "systemctl suspend"
-    end
-
-    # Step 5: Custom AC action
-    custom:
       timeout 300
-      command "notify-send 'AC mode custom action'"
+      command "systemctl suspend"
     end
   end
 
   # Laptop-only battery actions
   on_battery:
+    custom-brightness-instant:
+      timeout 0
+      command "brightnessctl set 100%"
+    end
 
-    # Step 1: Lock screen
     lock_screen:
       timeout 300
       command "swaylock"
     end
 
-    # Step 2: Turn off monitors
     dpms:
       timeout 300
       command "niri msg action power-off-monitors"
     end
 
-    # Step 3: Reduce brightness
     brightness:
-      timeout 300
+      timeout 10
       command "brightnessctl set 30%"
     end
 
-    # Step 4: Suspend sooner than AC
     suspend:
       timeout 1200
       command "systemctl suspend"
-    end
-
-    # Step 5: Custom battery action
-    custom:
-      timeout 300
-      command "notify-send 'Battery mode custom action'"
     end
   end
 end
