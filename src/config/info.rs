@@ -26,8 +26,8 @@ impl StasisConfig {
             if self.respect_wayland_inhibitors { "true" } else { "false" }
         ));
         out.push_str(&format!("  DebounceSeconds    = {}\n", self.debounce_seconds));
-        out.push_str(&format!("  LidCloseAction    = {}\n", self.lid_close_action));
-        out.push_str(&format!("  LidOpenAction    = {}\n", self.lid_open_action));
+        out.push_str(&format!("  LidCloseAction     = {}\n", self.lid_close_action));
+        out.push_str(&format!("  LidOpenAction      = {}\n", self.lid_open_action));
 
         let apps = if self.inhibit_apps.is_empty() {
             "-".to_string()
