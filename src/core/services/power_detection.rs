@@ -76,6 +76,8 @@ pub async fn spawn_power_source_monitor(manager: Arc<Mutex<Manager>>) {
 
             let mut mgr = manager.lock().await;
             mgr.state.set_on_battery(!on_ac);
+            mgr.reset_instant_actions();
+            mgr.trigger_instant_actions().await;
         }
     }
 }

@@ -19,6 +19,8 @@ pub struct ManagerState {
     pub current_block: Option<String>,
     pub debounce: Option<Instant>,
     pub default_actions: Vec<IdleActionBlock>,
+    pub instant_actions: Vec<IdleActionBlock>,
+    pub instants_triggered: bool,
     pub last_activity: Instant,
     pub last_activity_display: Instant,
     pub lock_state: LockState,
@@ -49,6 +51,8 @@ impl Default for ManagerState {
             current_block: None,
             debounce: None,
             default_actions: Vec::new(),
+            instant_actions: Vec::new(),
+            instants_triggered: false,
             last_activity: now, 
             last_activity_display: now,
             lock_state: LockState::default(),
@@ -92,7 +96,15 @@ impl ManagerState {
         let now = Instant::now();
         let debounce = Some(now + Duration::from_secs(cfg.debounce_seconds as u64));
 
-        Self {
+        let instant_actions: Vec<_> = default_actions
+            .iter()
+            .chain(&ac_actions)
+            .chain(&battery_actions)
+            .filter(|a| a.is_instant())
+            .cloned()
+            .collect();
+
+        let state = Self {
             ac_actions,
             action_index: 0,
             active_flags: ActiveFlags::default(),
@@ -104,6 +116,8 @@ impl ManagerState {
             current_block: None,
             debounce,
             default_actions,
+            instant_actions,
+            instants_triggered: false,
             last_activity: now,
             last_activity_display: now,
             lock_state: LockState::from_config(&cfg),
@@ -116,7 +130,9 @@ impl ManagerState {
             shutdown_flag: Arc::new(Notify::new()),
             start_time: now,
             suspend_occured: false,
-        }
+        };
+
+        state
     }
 
     pub fn is_laptop(&self) -> bool {
@@ -135,7 +151,6 @@ impl ManagerState {
             l.on_battery = value;
         }
     }
-
 
     pub async fn update_from_config(&mut self, cfg: &StasisConfig) {
         self.active_flags = ActiveFlags::default();
@@ -176,6 +191,19 @@ impl ManagerState {
             }
         }
 
+        // Recompute instant_actions for new config
+        self.instant_actions = self
+            .default_actions
+            .iter()
+            .chain(&self.ac_actions)
+            .chain(&self.battery_actions)
+            .filter(|a| a.is_instant())
+            .cloned()
+            .collect();
+
+        // Reset instant trigger flag
+        self.instants_triggered = false;
+
         self.cfg = Some(Arc::new(cfg.clone()));
         self.lock_state = LockState::from_config(cfg);
         self.last_activity = Instant::now();
@@ -193,7 +221,6 @@ impl ManagerState {
 
         log_message("Idle timers reloaded from config");
     }
-
 }
 
 #[derive(Debug)]

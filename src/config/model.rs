@@ -32,6 +32,12 @@ pub struct IdleActionBlock {
     pub last_triggered: Option<Instant>,
 }
 
+impl IdleActionBlock {
+    pub fn is_instant(&self) -> bool {
+        self.timeout == 0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AppInhibitPattern {
     Literal(String),

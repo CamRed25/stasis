@@ -167,6 +167,12 @@ async fn main() -> Result<()> {
     let cfg = Arc::new(load_config(config_path.to_str().unwrap())?);
     let manager = Manager::new(Arc::clone(&cfg));
     let manager = Arc::new(Mutex::new(manager));
+
+    // Immediately trigger instants at startup
+    {
+        let mut mgr = manager.lock().await;
+        mgr.trigger_instant_actions().await;
+    }
     
     // --- Spawn background tasks ---
     let idle_handle = spawn_idle_task(Arc::clone(&manager));

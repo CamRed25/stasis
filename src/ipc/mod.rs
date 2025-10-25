@@ -39,6 +39,8 @@ pub async fn spawn_ipc_socket_with_listener(
                                     Ok(new_cfg) => {
                                         let mut mgr = manager.lock().await;
                                         mgr.state.update_from_config(&new_cfg).await;
+                                        mgr.trigger_instant_actions().await;
+
                                         log_message("Config reloaded successfully");
                                         "Config reloaded successfully".to_string()
                                     }

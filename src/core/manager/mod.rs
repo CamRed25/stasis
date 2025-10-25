@@ -41,6 +41,26 @@ impl Manager {
         }
     }
 
+    pub async fn trigger_instant_actions(&mut self) {
+        if self.state.instants_triggered {
+            return;
+        }
+
+        let instant_actions = self.state.instant_actions.clone();
+
+        log_message("Triggering instant actions at startup...");
+        for action in instant_actions {
+            run_action(self, &action).await;
+        }
+
+        self.state.instants_triggered = true;
+    }
+
+    pub fn reset_instant_actions(&mut self) {
+        self.state.instants_triggered = false;
+        log_message("Instant actions reset; they can trigger again");
+    }
+
     // Called when libinput service resets (on user activity)
     pub async fn reset(&mut self) {
         let cfg = match &self.state.cfg {
@@ -93,11 +113,14 @@ impl Manager {
             _ => unreachable!(),
         };
 
-        self.state.action_index = actions
-        .iter()
-        .position(|a| a.last_triggered.is_none())
-        .unwrap_or(actions.len().saturating_sub(1));
+        // Skip instant actions here. handled elsewhere
+        let index = actions.iter()
+            .position(|a| a.last_triggered.is_none())
+            .unwrap_or(actions.len().saturating_sub(1));
 
+        if actions[index].is_instant() {
+            return;
+        }
 
         if self.state.lock_state.is_locked {
             if let Some(lock_index) = actions.iter().position(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen)) {
