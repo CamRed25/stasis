@@ -80,8 +80,10 @@ pub async fn run_command_detached(command: &str) -> Result<u32, Box<dyn std::err
         return Err("Empty command".into());
     }
 
-    let child = Command::new(parts[0])
-        .args(&parts[1..])
+    let child = Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .envs(std::env::vars())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

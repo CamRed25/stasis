@@ -12,7 +12,7 @@ use tokio::{
 
 pub use self::state::ManagerState;
 use crate::{
-    config::model::StasisConfig, 
+    config::model::{IdleAction, StasisConfig}, 
     core::manager::{
         actions::{is_process_running, run_command_detached},
         helpers::{restore_brightness, run_action}, 
@@ -154,6 +154,8 @@ impl Manager {
                 } 
             } 
         }
+        
+        self.fire_resume_queue().await;
         self.state.notify.notify_one();
     }
 
@@ -225,13 +227,40 @@ impl Manager {
             self.state.action_index += 1;
             if self.state.action_index < actions.len() {
                 actions[self.state.action_index].last_triggered = Some(now);
+                self.state.resume_commands_fired = false;
             } else {
                 self.state.action_index = actions.len() - 1;
+            }
+
+            // Add to resume_queue, except if already queued
+            if matches!(action_clone.kind, IdleAction::LockScreen) {
+                // Do NOT push lock actions to resume_queue
+            } else if action_clone.resume_command.is_some() {
+                self.state.resume_queue.push(action_clone.clone());
             }
             
             // Now we can call run_action with full mutable self access
             run_action(self, &action_clone).await;
         }
+    }
+
+    pub async fn fire_resume_queue(&mut self) {
+        if self.state.resume_queue.is_empty() {
+            return;
+        }
+
+        log_message(&format!("Firing {} queued resume command(s)...", self.state.resume_queue.len()));
+
+        for action in self.state.resume_queue.drain(..) {
+            if let Some(resume_cmd) = &action.resume_command {
+                log_message(&format!("Running resume command for action: {}", action.name));
+                if let Err(e) = run_command_detached(resume_cmd).await {
+                    log_message(&format!("Failed to run resume command '{}': {}", resume_cmd, e));
+                }
+            }
+        }
+
+        self.state.resume_queue.clear();
     }
 
     pub fn next_action_instant(&self) -> Option<Instant> {
@@ -330,7 +359,6 @@ impl Manager {
     pub async fn shutdown(&mut self) {
         self.state.shutdown_flag.notify_waiters();
 
-        // Optionally: give tasks time to clean up
         sleep(Duration::from_millis(200)).await;
 
         if let Some(handle) = self.idle_task_handle.take() {
@@ -458,6 +486,20 @@ pub async fn spawn_lock_watcher(manager: Arc<Mutex<Manager>>) -> JoinHandle<()> 
 
                 if !still_active {
                     let mut mgr = manager.lock().await;
+
+                    if let Some(lock_action) = mgr.state.default_actions.iter()
+                        .chain(mgr.state.ac_actions.iter())
+                        .chain(mgr.state.battery_actions.iter())
+                        .find(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen))
+                    {
+                        if let Some(resume_cmd) = &lock_action.resume_command {
+                            log_message("Firing lockscreen resume command");
+                            if let Err(e) = run_command_detached(resume_cmd).await {
+                                log_message(&format!("Failed to run lock resume command: {}", e));
+                            }
+                        }
+                    }
+
                     mgr.state.lock_state.pid = None;
                     mgr.state.lock_state.post_advanced = false;
                     mgr.state.action_index = 0;
