@@ -83,13 +83,20 @@ impl Manager {
         let debounce = Duration::from_secs(cfg.debounce_seconds as u64);
         self.state.debounce = Some(now + debounce);
 
-        // Clear all last_triggered times so actions count from debounce end
+        // Clear only actions that are before or equal to the current stage
         for actions in [&mut self.state.default_actions, &mut self.state.ac_actions, &mut self.state.battery_actions] {
+            let mut past_lock = false;
             for a in actions.iter_mut() {
+                if matches!(a.kind, crate::config::model::IdleAction::LockScreen) {
+                    past_lock = true;
+                }
+                // if locked, preserve stages past lock (so dpms/suspend remain offset correctly)
+                if self.state.lock_state.is_locked && past_lock {
+                    continue;
+                }
                 a.last_triggered = None;
             }
-        }
-
+        }        
         let block_name = if !self.state.ac_actions.is_empty() || !self.state.battery_actions.is_empty() {
             match self.state.on_battery() {
                 Some(true) => "battery",
@@ -124,19 +131,28 @@ impl Manager {
 
         if self.state.lock_state.is_locked {
             if let Some(lock_index) = actions.iter().position(|a| matches!(a.kind, crate::config::model::IdleAction::LockScreen)) {
-                if self.state.action_index <= lock_index {
+                // Check if lock process is still running
+                let still_active = if let Some(cmd) = &self.state.lock_state.command {
+                    is_process_running(cmd).await
+                } else {
+                    true // Assume lock is active if no command is specified
+                };
 
-
+                if still_active {
+                    // Always advance to one past lock when locked
                     self.state.action_index = lock_index.saturating_add(1);
                     
                     let debounce_end = now + debounce;
                     if self.state.action_index < actions.len() {
-                        actions[self.state.action_index].last_triggered = Some(debounce_end);
+                        actions[self.state.action_index].last_triggered = Some(debounce_end); 
+                    } else {
+                        // If at the end, reset last_triggered for the last action
+                        actions[lock_index].last_triggered = Some(debounce_end);
                     }
                     
                     self.state.lock_state.post_advanced = true;
-                }
-            }
+                } 
+            } 
         }
         self.state.notify.notify_one();
     }
