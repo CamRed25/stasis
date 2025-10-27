@@ -36,6 +36,9 @@ impl IdleActionBlock {
     pub fn is_instant(&self) -> bool {
         self.timeout == 0
     }
+    pub fn has_resume_command(&self) -> bool {
+        self.resume_command.is_some()
+    }
 }
 
 #[derive(Debug, Clone)]

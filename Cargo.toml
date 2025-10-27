@@ -1,6 +1,6 @@
 [package]
 name = "stasis"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 authors = ["Dustin Pilgrim <dustin.pilgrim1997@gmail.com>"]
 description = "A lightweight, Feature Rich Wayland idle manager written in Rust."
