@@ -6,10 +6,15 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs { inherit system; };
+  outputs = {
+    self,
+    nixpkgs,
+    flake-utils,
+    ...
+  }:
+    flake-utils.lib.eachDefaultSystem (
+      system: let
+        pkgs = import nixpkgs {inherit system;};
       in {
         # Simple package you can build with: nix build .#stasis
         packages.stasis = pkgs.stdenv.mkDerivation {
@@ -17,7 +22,7 @@
           version = "0.1.0";
           src = ./.;
 
-          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.openssl pkgs.pkg-config pkgs.zlib ];
+          buildInputs = [pkgs.rustc pkgs.cargo pkgs.openssl pkgs.pkg-config pkgs.zlib];
 
           # Use Cargo.lock for reproducible builds when available
           buildPhase = ''
@@ -34,7 +39,7 @@
         # Developer shell: rustc, cargo, openssl, pkg-config and git
         devShell = pkgs.mkShell {
           name = "stasis-devshell";
-          buildInputs = [ pkgs.rustc pkgs.cargo pkgs.openssl pkgs.pkg-config pkgs.git pkgs.zlib ];
+          buildInputs = [pkgs.rustc pkgs.cargo pkgs.openssl pkgs.pkg-config pkgs.git pkgs.zlib];
           RUSTFLAGS = "-C target-cpu=native";
           shellHook = ''
             echo "Entering stasis dev shell — run: cargo build, cargo run, or nix build .#stasis"
