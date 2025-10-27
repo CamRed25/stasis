@@ -1,6 +1,4 @@
 {
-  description = "Nix flake for stasis (developer shell + simple build)";
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -16,26 +14,24 @@
       system: let
         pkgs = import nixpkgs {inherit system;};
       in {
-        # Simple package you can build with: nix build .#stasis
-        packages.stasis = pkgs.stdenv.mkDerivation {
+        # Pure Nix build using buildRustPackage. This is hermetic and CI-friendly.
+        packages.stasis = pkgs.rustPlatform.buildRustPackage rec {
           pname = "stasis";
           version = "0.1.0";
           src = ./.;
 
-          buildInputs = [pkgs.rustc pkgs.cargo pkgs.openssl pkgs.pkg-config pkgs.zlib];
+          # Use the repository Cargo.lock to avoid querying crates.io during the
+          # derivation evaluation step.
+          cargoLock = {lockFile = ./Cargo.lock;};
 
-          # Use Cargo.lock for reproducible builds when available
-          buildPhase = ''
-            export CARGO_HOME=$PWD/.cargo
-            cargo build --release --locked
-          '';
+          # Dependencies required at build/runtime
+          nativeBuildInputs = [pkgs.pkg-config];
+          buildInputs = [pkgs.openssl pkgs.zlib pkgs.udev pkgs.dbus pkgs.libinput];
 
-          installPhase = ''
-            mkdir -p $out/bin
-            cp target/release/stasis $out/bin/ || true
-          '';
+          # Optionally set RUSTFLAGS or other env vars
+          RUSTFLAGS = "-C target-cpu=native";
         };
-
+        # not much testing done here, feel free to change if needed.
         # Developer shell: rustc, cargo, openssl, pkg-config and git
         devShell = pkgs.mkShell {
           name = "stasis-devshell";
