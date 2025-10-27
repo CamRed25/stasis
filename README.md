@@ -96,6 +96,52 @@ Works with `paru` too:
 paru -S stasis
 ```
 
+### NixOS
+
+**please note the note at the bottom about flakes and nix.**
+
+If you use Nix flakes, `stasis` provides a `flake.nix` so you can build or
+consume the package directly from flakes.
+
+Quick ways to use `stasis` from flakes:
+
+- Build directly from the remote flake (no local checkout required):
+
+```bash
+# build the stasis package from GitHub
+nix build 'github:saltnpepper97/stasis#stasis'
+```
+
+- Add `stasis` as an input in your own `flake.nix` and reference the package in
+  your outputs or NixOS configuration. Example (snippet):
+
+```nix
+inputs = {
+  nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  stasis.url = "github:saltnpepper97/stasis";
+};
+
+outputs = { self, nixpkgs, ... }:
+let
+  system = "x86_64-linux"; # adjust for your host
+in {
+  # reference the stasis package from the stasis flake
+  packages.${system}.my-stasis = self.inputs.stasis.packages.${system}.stasis;
+
+  # Or add it to a NixOS configuration
+  nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
+    inherit system;
+    modules = [ ./configuration.nix ];
+    configuration = {
+      environment.systemPackages = [ self.inputs.stasis.packages.${system}.stasis ];
+    };
+  };
+}
+```
+
+Notes:
+- please know this i am a complete noob in nix and flakes, so updates and fixes will be appreciated! --CamRed25
+
 ### From Source
 
 Build and install manually for maximum control:
